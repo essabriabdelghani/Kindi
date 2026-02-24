@@ -131,7 +131,9 @@ class AuthController {
 
     // 3️⃣ SESSION + SYNC
     SessionService.login(teacher);
-    if (firebaseOk) _syncAfterLogin(teacher);
+    _syncAfterLogin(
+      teacher,
+    ); // ✅ Fix : toujours sync, même si Firebase Auth hors-ligne
 
     return LoginResult(teacher: teacher);
   }

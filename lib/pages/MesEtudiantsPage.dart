@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/db_service.dart';
-import '../services/sync_engine.dart'; // ✅ Fix 1 : pour sync Firebase
+import '../services/sync_engine.dart';
+import '../services/sync_down_service.dart'; // ✅ sync descendante
 
 class MesEtudiantsPage extends StatefulWidget {
   final int teacherId;
@@ -11,20 +12,37 @@ class MesEtudiantsPage extends StatefulWidget {
 }
 
 class _MesEtudiantsPageState extends State<MesEtudiantsPage> {
-  late Future<List<Map<String, dynamic>>> futureStudents;
+  // ✅ Pas de late — initialisé directement
+  Future<List<Map<String, dynamic>>> futureStudents = Future.value([]);
+  bool _syncing = true;
 
   @override
   void initState() {
     super.initState();
+    _syncThenLoad();
+  }
+
+  // ✅ Sync descendante Firebase → SQLite puis afficher
+  Future<void> _syncThenLoad() async {
+    if (mounted) setState(() => _syncing = true);
+
+    await SyncDownService.syncForTeacher(
+      teacherId: widget.teacherId,
+      schoolName: '', // sera ignoré si déjà en SQLite
+      schoolCity: '',
+    );
+
     _refresh();
+    if (mounted) setState(() => _syncing = false);
   }
 
   void _refresh() {
-    futureStudents = DBService.getActiveStudentsByTeacher(widget.teacherId);
-    setState(() {});
+    if (!mounted) return;
+    setState(() {
+      futureStudents = DBService.getActiveStudentsByTeacher(widget.teacherId);
+    });
   }
 
-  // ✅ Fix 1 : archive → synced=0 → SyncEngine propage à Firebase
   Future<void> _archiveStudent(Map<String, dynamic> s) async {
     final firstName = s['first_name'] ?? '';
     final lastName = s['last_name'] ?? '';
@@ -50,15 +68,9 @@ class _MesEtudiantsPageState extends State<MesEtudiantsPage> {
 
     if (confirm != true) return;
 
-    // 1. SQLite : deleted=1, synced=0
     await DBService.archiveStudent(s['id']);
-
-    // ✅ Fix 1 : marquer synced=0 pour que SyncEngine propage à Firebase
     await SyncEngine.markUnsync('children', s['id']);
-
-    // 2. Tenter sync immédiate si en ligne
     SyncEngine.syncAll(teacherId: widget.teacherId);
-
     _refresh();
   }
 
@@ -72,57 +84,110 @@ class _MesEtudiantsPageState extends State<MesEtudiantsPage> {
       appBar: AppBar(
         backgroundColor: Colors.orange,
         title: const Text("Mes étudiants"),
-      ),
-      body: Center(
-        child: SizedBox(
-          width: maxWidth,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: futureStudents,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: Colors.orange),
-                  );
-                }
-                if (snapshot.hasError) {
-                  return Center(child: Text("Erreur : ${snapshot.error}"));
-                }
-
-                final students = snapshot.data ?? [];
-
-                if (students.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      "Aucun étudiant trouvé.",
-                      style: TextStyle(fontSize: 16, color: Colors.black54),
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  itemCount: students.length,
-                  itemBuilder: (context, index) {
-                    final s = students[index];
-                    return _StudentCard(
-                      student: s,
-                      onArchive: () => _archiveStudent(s),
-                    );
-                  },
-                );
-              },
+        actions: [
+          if (_syncing)
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.sync),
+              tooltip: "Synchroniser",
+              onPressed: _syncThenLoad,
             ),
-          ),
-        ),
+        ],
       ),
+      body: _syncing
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Colors.orange),
+                  SizedBox(height: 15),
+                  Text(
+                    "Synchronisation...",
+                    style: TextStyle(color: Colors.black54),
+                  ),
+                ],
+              ),
+            )
+          : Center(
+              child: SizedBox(
+                width: maxWidth,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: FutureBuilder<List<Map<String, dynamic>>>(
+                    future: futureStudents,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(
+                          child: CircularProgressIndicator(
+                            color: Colors.orange,
+                          ),
+                        );
+                      }
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Text("Erreur : ${snapshot.error}"),
+                        );
+                      }
+
+                      final students = snapshot.data ?? [];
+
+                      if (students.isEmpty) {
+                        return const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.child_care,
+                                size: 60,
+                                color: Colors.orange,
+                              ),
+                              SizedBox(height: 15),
+                              Text(
+                                "Aucun étudiant trouvé.",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      return RefreshIndicator(
+                        color: Colors.orange,
+                        onRefresh: _syncThenLoad,
+                        child: ListView.builder(
+                          itemCount: students.length,
+                          itemBuilder: (context, index) {
+                            final s = students[index];
+                            return _StudentCard(
+                              student: s,
+                              onArchive: () => _archiveStudent(s),
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────
-// Widget carte étudiant
-// ─────────────────────────────────────────────────────────
 class _StudentCard extends StatelessWidget {
   final Map<String, dynamic> student;
   final VoidCallback onArchive;
@@ -138,7 +203,6 @@ class _StudentCard extends StatelessWidget {
     final risk = student['latest_overall_risk_level'] ?? '';
     final fullName = '$firstName $lastName'.trim();
 
-    // ✅ Fix 2 : genre correct (male/female au lieu de boy/girl)
     final isFemale = gender == 'female' || gender == 'girl' || gender == 'F';
 
     return Container(
@@ -157,23 +221,20 @@ class _StudentCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Avatar
           Container(
             width: 50,
             height: 50,
             decoration: BoxDecoration(
-              color: Colors.orange.withOpacity(0.15),
+              color: _riskColor(risk).withOpacity(0.15),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(
-              isFemale ? Icons.face_3 : Icons.face, // ✅ Fix 2
-              color: Colors.orange,
+              isFemale ? Icons.face_3 : Icons.face,
+              color: _riskColor(risk).withOpacity(0.8),
               size: 28,
             ),
           ),
           const SizedBox(width: 15),
-
-          // Infos
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -216,8 +277,6 @@ class _StudentCard extends StatelessWidget {
               ],
             ),
           ),
-
-          // Bouton archive
           IconButton(
             icon: const Icon(Icons.archive, color: Colors.red),
             tooltip: 'Archiver',
@@ -237,7 +296,7 @@ class _StudentCard extends StatelessWidget {
       case 'red':
         return Colors.red;
       default:
-        return Colors.grey;
+        return Colors.orange;
     }
   }
 

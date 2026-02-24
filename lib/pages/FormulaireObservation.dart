@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/children.dart';
+import '../services/db_service.dart';
+import '../services/sync_engine.dart';
 
 class FormulaireObservationPage extends StatefulWidget {
   final Child child;
@@ -13,312 +15,525 @@ class FormulaireObservationPage extends StatefulWidget {
 }
 
 class _FormulaireObservationPageState extends State<FormulaireObservationPage> {
-  // ======= Champs du formulaire =======
-  String contexte = "Regroupement";
-  String reponseQ1 = "Jamais";
-  String reponseQ2 = "Jamais";
-  String reponseQ3 = "Jamais";
+  // ── État ───────────────────────────────────────────────
+  String _context = "Regroupement";
+  final _noteCtrl = TextEditingController();
 
-  final TextEditingController noteController = TextEditingController();
+  // questionId → valeur (0=Jamais, 1=Parfois, 2=Souvent)
+  final Map<int, int> _answers = {};
 
-  late final String dateObservation;
+  // Questions chargées depuis SQLite
+  List<Map<String, dynamic>> _questions = [];
+
+  bool _loading = true; // chargement questions
+  bool _submitting = false; // envoi en cours
+
+  late final String _dateObservation;
+
+  // ── domaines lisibles ─────────────────────────────────
+  final Map<String, String> _domainLabels = {
+    'inattention': '🔵 Inattention',
+    'hyperactivity_impulsivity': '🔴 Hyperactivité / Impulsivité',
+    'self_regulation_social': '🟢 Autorégulation sociale',
+  };
 
   @override
   void initState() {
     super.initState();
-    dateObservation = DateFormat('dd/MM/yyyy').format(DateTime.now());
+    _dateObservation = DateFormat('dd/MM/yyyy').format(DateTime.now());
+    _loadQuestions();
   }
 
   @override
   void dispose() {
-    noteController.dispose();
+    _noteCtrl.dispose();
     super.dispose();
   }
 
+  // ══════════════════════════════════════════════════════
+  // Charger les questions depuis SQLite
+  // ══════════════════════════════════════════════════════
+  Future<void> _loadQuestions() async {
+    setState(() => _loading = true);
+    final qs = await DBService.getChecklistQuestions();
+
+    // Initialiser toutes les réponses à 0 (Jamais)
+    final answers = <int, int>{};
+    for (final q in qs) {
+      answers[q['id'] as int] = 0;
+    }
+
+    setState(() {
+      _questions = qs;
+      _answers.addAll(answers);
+      _loading = false;
+    });
+  }
+
+  // ══════════════════════════════════════════════════════
+  // Soumettre → SQLite (synced=0) → SyncEngine → Firestore
+  // ══════════════════════════════════════════════════════
+  Future<void> _submit() async {
+    if (_answers.isEmpty) return;
+
+    setState(() => _submitting = true);
+
+    try {
+      // ✅ insertObservationChecklist avec synced=0
+      await DBService.insertObservationChecklist(
+        childId: widget.child.id!,
+        teacherId: widget.child.mainTeacherId,
+        classId: widget.child.classId,
+        context: _context,
+        notes: _noteCtrl.text.trim(),
+        answers: _answers,
+      );
+
+      // ✅ Sync montante vers Firestore
+      SyncEngine.syncAll(teacherId: widget.child.mainTeacherId);
+
+      if (!mounted) return;
+      setState(() => _submitting = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Observation sauvegardée ✅"),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      Navigator.pop(context);
+    } catch (e) {
+      setState(() => _submitting = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur : $e"), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  // UI
+  // ══════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    double width = MediaQuery.of(context).size.width;
-    double maxWidth = width > 800 ? 800 : width * 0.95;
-
     final child = widget.child;
     final fullName = "${child.firstName} ${child.lastName ?? ''}".trim();
+    final width = MediaQuery.of(context).size.width;
+    final maxWidth = width > 800 ? 800.0 : width * 0.95;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFCEFE3),
-
       appBar: AppBar(
         backgroundColor: Colors.orange,
-        elevation: 0,
         title: const Text("Nouvelle observation"),
       ),
-
-      body: Center(
-        child: SingleChildScrollView(
-          child: SizedBox(
-            width: maxWidth,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
+      body: _loading
+          ? const Center(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // 🔹 Infos enfant
-                  infoCard(
-                    fullName: fullName,
-                    childCode: child.childCode,
-                    gender: child.gender,
-                    classId: child.classId,
-                    dateObservation: dateObservation,
-                  ),
-
-                  const SizedBox(height: 25),
-
-                  // 🔹 CONTEXTE
-                  sectionTitle("Contexte"),
-                  contextDropdown(),
-
-                  const SizedBox(height: 25),
-
-                  // 🔹 QUESTION 1
-                  sectionTitle("1. A du mal à rester concentré"),
-                  choiceGroup(
-                    value: reponseQ1,
-                    onChanged: (val) => setState(() => reponseQ1 = val!),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // 🔹 QUESTION 2
-                  sectionTitle("2. Interrompt souvent les autres"),
-                  choiceGroup(
-                    value: reponseQ2,
-                    onChanged: (val) => setState(() => reponseQ2 = val!),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // 🔹 QUESTION 3
-                  sectionTitle("3. A du mal à suivre les consignes"),
-                  choiceGroup(
-                    value: reponseQ3,
-                    onChanged: (val) => setState(() => reponseQ3 = val!),
-                  ),
-
-                  const SizedBox(height: 25),
-
-                  // 🔹 Notes
-                  sectionTitle("Notes (optionnel)"),
-                  notesField(),
-
-                  const SizedBox(height: 40),
-
-                  // 🔹 BOUTON SOUMETTRE
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.save),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                      ),
-                      onPressed: _submitObservation,
-                      label: const Text(
-                        "Soumettre l'observation",
-                        style: TextStyle(fontSize: 18),
-                      ),
-                    ),
+                  CircularProgressIndicator(color: Colors.orange),
+                  SizedBox(height: 15),
+                  Text(
+                    "Chargement des questions...",
+                    style: TextStyle(color: Colors.black54),
                   ),
                 ],
               ),
+            )
+          : Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: SizedBox(
+                  width: maxWidth,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Carte enfant ───────────────────
+                      _InfoCard(
+                        fullName: fullName,
+                        childCode: child.childCode,
+                        gender: child.gender,
+                        dateObservation: _dateObservation,
+                      ),
+                      const SizedBox(height: 20),
+
+                      // ── Contexte ───────────────────────
+                      _sectionTitle("Contexte"),
+                      _contextDropdown(),
+                      const SizedBox(height: 20),
+
+                      // ── Questions groupées par domaine ─
+                      ..._buildQuestionsByDomain(),
+                      const SizedBox(height: 20),
+
+                      // ── Notes ──────────────────────────
+                      _sectionTitle("Notes (optionnel)"),
+                      _notesField(),
+                      const SizedBox(height: 30),
+
+                      // ── Score résumé ───────────────────
+                      _ScorePreview(
+                        answers: _answers,
+                        total: _questions.length,
+                      ),
+                      const SizedBox(height: 20),
+
+                      // ── Bouton soumettre ───────────────
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton.icon(
+                          icon: _submitting
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.save, color: Colors.white),
+                          label: Text(
+                            _submitting
+                                ? "Envoi en cours..."
+                                : "Soumettre l'observation",
+                            style: const TextStyle(
+                              fontSize: 17,
+                              color: Colors.white,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange,
+                            disabledBackgroundColor: Colors.orange.withOpacity(
+                              0.5,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                          ),
+                          onPressed: _submitting ? null : _submit,
+                        ),
+                      ),
+                      const SizedBox(height: 30),
+                    ],
+                  ),
+                ),
+              ),
             ),
+    );
+  }
+
+  // ── Questions groupées par domaine ──────────────────────
+  List<Widget> _buildQuestionsByDomain() {
+    // Grouper les questions par domaine
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+    for (final q in _questions) {
+      final domain = q['domain'] as String? ?? 'other';
+      grouped.putIfAbsent(domain, () => []);
+      grouped[domain]!.add(q);
+    }
+
+    final widgets = <Widget>[];
+    grouped.forEach((domain, questions) {
+      widgets.add(
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(15),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 8,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // En-tête domaine
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(15),
+                  ),
+                ),
+                child: Text(
+                  _domainLabels[domain] ?? domain,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange,
+                  ),
+                ),
+              ),
+
+              // Questions du domaine
+              ...questions.map((q) {
+                final qId = q['id'] as int;
+                final text =
+                    q['text_fr'] as String? ?? q['text_en'] as String? ?? '';
+                final val = _answers[qId] ?? 0;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
+                      child: Text(
+                        text,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        _choiceBtn(qId, 0, val, "Jamais", Colors.green),
+                        _choiceBtn(qId, 1, val, "Parfois", Colors.orange),
+                        _choiceBtn(qId, 2, val, "Souvent", Colors.red),
+                      ],
+                    ),
+                    const Divider(height: 1, indent: 14, endIndent: 14),
+                  ],
+                );
+              }),
+            ],
+          ),
+        ),
+      );
+    });
+    return widgets;
+  }
+
+  Widget _choiceBtn(int qId, int val, int current, String label, Color color) {
+    final selected = current == val;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _answers[qId] = val),
+        child: Container(
+          margin: const EdgeInsets.all(6),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? color.withOpacity(0.15)
+                : Colors.grey.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? color : Colors.grey.withOpacity(0.3),
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                val == 0
+                    ? Icons.check_circle_outline
+                    : val == 1
+                    ? Icons.access_time
+                    : Icons.warning_amber_outlined,
+                color: selected ? color : Colors.grey,
+                size: 20,
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                  color: selected ? color : Colors.grey,
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  // =====================================================
-  // 🔹 Submit
-  // =====================================================
-  void _submitObservation() {
-    // Exemple: récupérer toutes les valeurs
-    final observationData = {
-      "child_id": widget.child.id,
-      "class_id": widget.child.classId,
-      "teacher_id": widget.child.mainTeacherId,
-      "date": DateTime.now().toIso8601String(),
-      "contexte": contexte,
-      "q1": reponseQ1,
-      "q2": reponseQ2,
-      "q3": reponseQ3,
-      "notes": noteController.text.trim(),
-    };
+  // ── Helpers UI ─────────────────────────────────────────
+  Widget _sectionTitle(String title) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(
+      title,
+      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+    ),
+  );
 
-    // Pour l'instant juste affichage (après tu connectes DB)
-    debugPrint("Observation envoyée: $observationData");
+  Widget _contextDropdown() => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 15),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.orange),
+    ),
+    child: DropdownButton<String>(
+      value: _context,
+      isExpanded: true,
+      underline: const SizedBox(),
+      items: const [
+        DropdownMenuItem(value: "Regroupement", child: Text("Regroupement")),
+        DropdownMenuItem(value: "Jeu libre", child: Text("Jeu libre")),
+        DropdownMenuItem(value: "Activité", child: Text("Activité")),
+        DropdownMenuItem(value: "Récréation", child: Text("Récréation")),
+      ],
+      onChanged: (v) => setState(() => _context = v!),
+    ),
+  );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Observation soumise avec succès"),
-        backgroundColor: Colors.orange,
+  Widget _notesField() => Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.orange),
+    ),
+    child: TextField(
+      controller: _noteCtrl,
+      maxLines: 3,
+      decoration: const InputDecoration(
+        contentPadding: EdgeInsets.all(15),
+        border: InputBorder.none,
+        hintText: "Ajouter une note...",
       ),
-    );
+    ),
+  );
+}
 
-    Navigator.pop(context);
-  }
+// ══════════════════════════════════════════════════════════
+// Widget carte enfant
+// ══════════════════════════════════════════════════════════
+class _InfoCard extends StatelessWidget {
+  final String fullName;
+  final String? childCode;
+  final String gender;
+  final String dateObservation;
 
-  // =====================================================
-  // 🔹 Widgets UI
-  // =====================================================
+  const _InfoCard({
+    required this.fullName,
+    required this.childCode,
+    required this.gender,
+    required this.dateObservation,
+  });
 
-  Widget infoCard({
-    required String fullName,
-    required String? childCode,
-    required String gender,
-    required int classId,
-    required String dateObservation,
-  }) {
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.orange.shade200, width: 1.5),
         boxShadow: const [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 5),
-          ),
+          BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 4)),
         ],
-        border: Border.all(color: Colors.orange.shade200, width: 1.2),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              const Icon(Icons.child_care, color: Colors.orange),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: Colors.orange.withOpacity(0.15),
+            child: Icon(
+              gender == 'girl' ? Icons.face_3 : Icons.face,
+              color: Colors.orange,
+              size: 30,
+            ),
+          ),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
                   fullName,
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
-            ],
+                if (childCode != null && childCode!.isNotEmpty)
+                  Text(
+                    "Code : $childCode",
+                    style: const TextStyle(color: Colors.black54),
+                  ),
+                Text(
+                  "📅 $dateObservation",
+                  style: const TextStyle(color: Colors.black54),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 10),
+        ],
+      ),
+    );
+  }
+}
 
-          // Code enfant
-          if (childCode != null && childCode!.isNotEmpty)
-            Text("Code : $childCode", style: const TextStyle(fontSize: 15)),
+// ══════════════════════════════════════════════════════════
+// Widget score preview en temps réel
+// ══════════════════════════════════════════════════════════
+class _ScorePreview extends StatelessWidget {
+  final Map<int, int> answers;
+  final int total;
 
-          const SizedBox(height: 6),
+  const _ScorePreview({required this.answers, required this.total});
 
-          // Gender + Classe
-          Row(
+  @override
+  Widget build(BuildContext context) {
+    if (answers.isEmpty || total == 0) return const SizedBox();
+
+    final score = answers.values.fold<int>(0, (a, b) => a + b);
+    final maxScore = total * 2;
+    final percent = (score / maxScore * 100).round();
+
+    Color color;
+    String label;
+    if (percent < 33) {
+      color = Colors.green;
+      label = "🟢 Risque Faible";
+    } else if (percent < 66) {
+      color = Colors.orange;
+      label = "🟠 Risque Modéré";
+    } else {
+      color = Colors.red;
+      label = "🔴 Risque Élevé";
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: color, width: 1.5),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                gender == 'girl' ? Icons.female : Icons.male,
-                color: Colors.orange,
+              const Text(
+                "Score estimé",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
-              const SizedBox(width: 6),
-              Text(
-                gender == 'girl' ? "Fille" : "Garçon",
-                style: const TextStyle(fontSize: 15),
-              ),
-              const SizedBox(width: 20),
-              const Icon(Icons.school, color: Colors.orange),
-              const SizedBox(width: 6),
-              Text(
-                "Classe ID : $classId",
-                style: const TextStyle(fontSize: 15),
-              ),
+              Text(label, style: TextStyle(color: color, fontSize: 14)),
             ],
           ),
-
-          const SizedBox(height: 10),
-
-          Text("Date : $dateObservation", style: const TextStyle(fontSize: 16)),
+          Text(
+            "$percent%",
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget contextDropdown() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 15),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange),
-      ),
-      child: DropdownButton<String>(
-        value: contexte,
-        isExpanded: true,
-        underline: const SizedBox(),
-        items: const [
-          DropdownMenuItem(value: "Regroupement", child: Text("Regroupement")),
-          DropdownMenuItem(value: "Jeu libre", child: Text("Jeu libre")),
-          DropdownMenuItem(value: "Activité", child: Text("Activité")),
-          DropdownMenuItem(value: "Récréation", child: Text("Récréation")),
-        ],
-        onChanged: (value) {
-          setState(() {
-            contexte = value!;
-          });
-        },
-      ),
-    );
-  }
-
-  Widget notesField() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange),
-      ),
-      child: TextField(
-        controller: noteController,
-        maxLines: 4,
-        decoration: const InputDecoration(
-          contentPadding: EdgeInsets.all(15),
-          border: InputBorder.none,
-          hintText: "Ajouter une note...",
-        ),
-      ),
-    );
-  }
-
-  Widget choiceGroup({
-    required String value,
-    required ValueChanged<String?> onChanged,
-  }) {
-    return Column(
-      children: ["Jamais", "Parfois", "Souvent"].map((choice) {
-        return RadioListTile<String>(
-          value: choice,
-          groupValue: value,
-          title: Text(choice),
-          activeColor: Colors.orange,
-          onChanged: onChanged,
-        );
-      }).toList(),
-    );
-  }
-
-  Widget sectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Text(
-        title,
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
     );
   }

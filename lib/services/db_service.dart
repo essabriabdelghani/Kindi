@@ -17,10 +17,10 @@ class DBService {
   }
 
   static Future<void> _onCreate(Database db, int version) async {
-    //  TABLE TEACHERS
+    // ===== TABLE TEACHERS =====
     await db.execute('''
       CREATE TABLE teachers (
-        uid INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         first_name TEXT NOT NULL,
         last_name TEXT,
         email TEXT UNIQUE NOT NULL,
@@ -41,7 +41,7 @@ class DBService {
       );
     ''');
 
-    // TABLE CLASSES
+    // ===== TABLE CLASSES =====
     await db.execute('''
       CREATE TABLE classes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +59,7 @@ class DBService {
       );
     ''');
 
-    // TABLE CLASS_TEACHERS
+    // ===== TABLE CLASS_TEACHERS =====
     await db.execute('''
       CREATE TABLE class_teachers (
         id INTEGER PRIMARY KEY,
@@ -71,7 +71,7 @@ class DBService {
       );
     ''');
 
-    //TABLE CHILDREN
+    // ===== TABLE CHILDREN =====
     await db.execute('''
       CREATE TABLE children (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,7 +94,7 @@ class DBService {
       );
     ''');
 
-    //TABLE CHECKLIST_QUESTIONS
+    // ===== TABLE CHECKLIST_QUESTIONS =====
     await db.execute('''
       CREATE TABLE checklist_questions (
         id INTEGER PRIMARY KEY,
@@ -112,7 +112,7 @@ class DBService {
       );
     ''');
 
-    //TABLE OBSERVATIONS
+    // ===== TABLE OBSERVATIONS =====
     await db.execute('''
       CREATE TABLE observations (
         id INTEGER PRIMARY KEY,
@@ -141,7 +141,7 @@ class DBService {
       );
     ''');
 
-    //TABLE OBSERVATION_ANSWERS
+    // ===== TABLE OBSERVATION_ANSWERS =====
     await db.execute('''
       CREATE TABLE observation_answers (
         id INTEGER PRIMARY KEY,
@@ -158,7 +158,7 @@ class DBService {
       );
     ''');
 
-    // INDEXES
+    // ===== INDEXES =====
     await db.execute('CREATE INDEX idx_children_class ON children(class_id);');
     await db.execute(
       'CREATE INDEX idx_observations_child ON observations(child_id);',
@@ -174,7 +174,7 @@ class DBService {
     );
   }
 
-  //INSERT TEACHER
+  // ===== INSERT TEACHER =====
   static Future<bool> insertTeacher(Teacher teacher) async {
     final db = await database;
     try {
@@ -189,7 +189,7 @@ class DBService {
     }
   }
 
-  //LOGIN
+  // ===== LOGIN =====
   static Future<Teacher?> login({
     required String email,
     required String passwordHash,
@@ -214,7 +214,7 @@ class DBService {
     return null;
   }
 
-  // GET CLASSES OF TEACHER
+  // ===== GET CLASSES OF TEACHER =====
   static Future<List<Map<String, dynamic>>> getClassesByTeacher(
     int teacherId,
   ) async {
@@ -240,14 +240,14 @@ class DBService {
   ) async {
     final db = await database;
     return await db.query(
-      'children',
+      'children', // ⚠️ حسب عندك اسم الجدول: children
       where: 'class_id = ? AND deleted = 0',
       whereArgs: [classId],
       orderBy: 'first_name ASC',
     );
   }
 
-  // INSERT STUDENT (CHILD)
+  // ===== INSERT STUDENT (CHILD) =====
   static Future<void> insertStudent({
     required String firstName,
     String? lastName,
@@ -267,7 +267,7 @@ class DBService {
       'class_id': classId,
       'main_teacher_id': mainTeacherId,
       'latest_overall_risk_level': riskLevel,
-      'synced': 0,
+      'synced': 0, // ✅ Fix : 0 pour que SyncEngine l'envoie
       'deleted': 0,
       'created_at': now,
       'updated_at': now,
@@ -314,7 +314,7 @@ class DBService {
     );
   }
 
-  //  GET ONE STUDENT BY ID
+  // ===== GET ONE STUDENT BY ID =====
   static Future<Map<String, dynamic>?> getStudentById(int id) async {
     final db = await database;
 
@@ -329,7 +329,7 @@ class DBService {
     return res.first;
   }
 
-  //  GET OBSERVATIONS OF STUDENT
+  // ===== GET OBSERVATIONS OF STUDENT =====
   static Future<List<Map<String, dynamic>>> getObservationsByStudent(
     int studentId,
   ) async {
@@ -343,7 +343,7 @@ class DBService {
     );
   }
 
-  // INSERT OBSERVATION
+  // ===== INSERT OBSERVATION =====
   static Future<void> insertObservation({
     required int childId,
     required int teacherId,
@@ -452,7 +452,7 @@ class DBService {
         "created_at": now,
         "updated_at": now,
         "deleted": 0,
-        "synced": 1,
+        "synced": 0, // ✅ Fix : 0 pour Firestore
       });
 
       // 2) insert answers
@@ -464,7 +464,7 @@ class DBService {
           "created_at": now,
           "updated_at": now,
           "deleted": 0,
-          "synced": 1,
+          "synced": 0, // ✅ Fix : 0 pour Firestore
         });
       }
 
@@ -503,7 +503,7 @@ class DBService {
     final now = DateTime.now().toIso8601String();
 
     final List<Map<String, dynamic>> questions = [
-      // DOMAIN 1: INATTENTION (9 ITEMS)
+      // ===== DOMAIN 1: INATTENTION (9 ITEMS) =====
       {
         "domain": "inattention",
         "order_index": 1,
@@ -571,7 +571,7 @@ class DBService {
         "text_ar": "يفقد كثيراً الأشياء اللازمة للأنشطة.",
       },
 
-      //  DOMAIN 2: HYPERACTIVITY & IMPULSIVITY (9 ITEMS)
+      // ===== DOMAIN 2: HYPERACTIVITY & IMPULSIVITY (9 ITEMS) =====
       {
         "domain": "hyperactivity_impulsivity",
         "order_index": 10,
@@ -639,7 +639,7 @@ class DBService {
         "text_ar": "يترك مكانه أو مساحة عمله بدون إذن.",
       },
 
-      // DOMAIN 3: SELF-REGULATION & SOCIAL-EMOTIONAL (6 ITEMS)
+      // ===== DOMAIN 3: SELF-REGULATION & SOCIAL-EMOTIONAL (6 ITEMS) =====
       {
         "domain": "self_regulation_social",
         "order_index": 19,

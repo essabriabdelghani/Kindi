@@ -9,10 +9,6 @@ class SyncEngine {
   static bool _isSyncing = false;
   static StreamSubscription? _connectivitySub;
 
-  // ─────────────────────────────────────────────────────────
-  // WATCHER CONNECTIVITÉ
-  // Appeler une fois après Firebase.initializeApp()
-  // ─────────────────────────────────────────────────────────
   static void startConnectivityWatcher({required int teacherId}) {
     _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
       final connected = results.any((r) => r != ConnectivityResult.none);
@@ -27,9 +23,6 @@ class SyncEngine {
     return result.any((r) => r != ConnectivityResult.none);
   }
 
-  // ─────────────────────────────────────────────────────────
-  // SYNC TOUT
-  // ─────────────────────────────────────────────────────────
   static Future<SyncReport> syncAll({required int teacherId}) async {
     if (_isSyncing) return SyncReport(skipped: true);
     if (!await isOnline()) return SyncReport(offline: true);
@@ -40,7 +33,7 @@ class SyncEngine {
     try {
       final db = await DBService.database;
 
-      // Ordre : teachers → classes → class_teachers → children → observations → answers
+      // Ordre obligatoire : parents avant enfants (FK)
       await _syncTable(
         db: db,
         table: 'teachers',
@@ -62,18 +55,41 @@ class SyncEngine {
         },
       );
 
+      // class_teachers : pas de colonne synced/deleted → sync via classes
+      // Les relations class_teachers sont recréées côté Firebase via les classes
+
+      // ✅ Fix 1 : children manquait dans ce fichier !
       await _syncTable(
         db: db,
-        table: 'class_teachers',
-        collection: 'class_teachers',
-        idPrefix: 'ct',
+        table: 'children',
+        collection: 'children',
+        idPrefix: 'child',
+        report: report,
+        extraFields: {
+          '_synced_at': FieldValue.serverTimestamp(),
+          '_owner_teacher_id': teacherId,
+        },
+      );
+
+      // ✅ Fix 1 : observations manquait aussi
+      await _syncTable(
+        db: db,
+        table: 'observations',
+        collection: 'observations',
+        idPrefix: 'obs',
         report: report,
         extraFields: {'_synced_at': FieldValue.serverTimestamp()},
       );
 
-      // Ajouter d'autres tables si nécessaire...
+      await _syncTable(
+        db: db,
+        table: 'observation_answers',
+        collection: 'observation_answers',
+        idPrefix: 'ans',
+        report: report,
+        extraFields: {'_synced_at': FieldValue.serverTimestamp()},
+      );
 
-      // Sync des suppressions
       await _syncDeletions(db, report);
     } catch (e) {
       report.errors.add('Erreur syncAll: $e');
@@ -81,10 +97,10 @@ class SyncEngine {
       _isSyncing = false;
     }
 
+    print('🔄 SyncEngine: ${report.message}');
     return report;
   }
 
-  // ─────────────────────────────────────────────────────────
   static Future<void> _syncTable({
     required Database db,
     required String table,
@@ -101,7 +117,7 @@ class SyncEngine {
         final docId = '${idPrefix}_$id';
         final data = Map<String, dynamic>.from(row);
 
-        data.remove('synced');
+        data.remove('synced'); // pas besoin dans Firestore
         data.addAll(extraFields);
 
         await _firestore
@@ -113,13 +129,21 @@ class SyncEngine {
 
         report.synced++;
       } catch (e) {
-        report.errors.add('$table[$row]: $e'); // row complet pour debug
+        // ✅ Fix 2 : afficher l'ID pas le row complet (row peut être trop grand)
+        report.errors.add('$table[${row['id']}]: $e');
+        print('❌ Sync erreur $table[${row['id']}]: $e');
       }
     }
   }
 
   static Future<void> _syncDeletions(Database db, SyncReport report) async {
-    final tables = {'classes': 'class', 'class_teachers': 'ct'};
+    // ✅ Fix 1 : ajouter children et observations dans les suppressions
+    final tables = {
+      'classes': 'class',
+      // class_teachers n'a pas synced/deleted → skip
+      'children': 'child',
+      'observations': 'obs',
+    };
 
     for (final entry in tables.entries) {
       final rows = await db.query(
@@ -146,21 +170,19 @@ class SyncEngine {
           );
 
           report.synced++;
-        } catch (_) {}
+        } catch (e) {
+          print('ℹ️ Suppression non propagée (doc inexistant?): $e');
+        }
       }
     }
   }
 
-  // ─────────────────────────────────────────────────────────
   static Future<void> markUnsync(String table, int id) async {
     final db = await DBService.database;
     await db.update(table, {'synced': 0}, where: 'id = ?', whereArgs: [id]);
   }
 }
 
-// ─────────────────────────────────────────────────────────
-// Rapport de sync
-// ─────────────────────────────────────────────────────────
 class SyncReport {
   int synced = 0;
   List<String> errors = [];
@@ -175,6 +197,6 @@ class SyncReport {
     if (skipped) return '⏳ Sync déjà en cours';
     if (offline) return '📴 Hors ligne — données sauvegardées localement';
     if (errors.isEmpty) return '✅ $synced éléments synchronisés';
-    return '⚠️ $synced OK — ${errors.length} erreur(s)';
+    return '⚠️ $synced OK — ${errors.length} erreur(s): ${errors.first}';
   }
 }
