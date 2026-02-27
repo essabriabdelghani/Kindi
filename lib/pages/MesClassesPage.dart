@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:sqflite/sqflite.dart'; // ✅ Fix : ConflictAlgorithm
 import '../models/teachers.dart';
 import '../services/db_service.dart';
 import '../services/sync_engine.dart';
-import '../services/sync_down_service.dart'; // ✅ Import sync descendante
+import '../services/sync_down_service.dart';
 import 'EtudiantsClassePage.dart';
-import 'package:sqflite/sqflite.dart';
 
 class MesClassesPage extends StatefulWidget {
   final Teacher user;
@@ -183,17 +184,46 @@ class _MesClassesPageState extends State<MesClassesPage> {
 
     final db = await DBService.database;
     final now = DateTime.now().toIso8601String();
+
+    // 1) Marquer les enfants de cette classe comme supprimés
+    await db.update(
+      'children',
+      {'deleted': 1, 'synced': 0, 'updated_at': now},
+      where: 'class_id = ? AND deleted = 0',
+      whereArgs: [classId],
+    );
+
+    // 2) Supprimer class_teachers local
     await db.delete(
       'class_teachers',
       where: 'class_id = ?',
       whereArgs: [classId],
     );
+
+    // 3) Marquer la classe comme supprimée SQLite
     await db.update(
       'classes',
       {'deleted': 1, 'synced': 0, 'updated_at': now},
       where: 'id = ?',
       whereArgs: [classId],
     );
+
+    // 4) Supprimer dans Firestore
+    try {
+      final fs = FirebaseFirestore.instance;
+      // Supprimer la classe
+      await fs.collection('classes').doc('class_$classId').delete();
+      // Supprimer les enfants de cette classe dans Firestore
+      final childrenSnap = await fs
+          .collection('children')
+          .where('class_id', isEqualTo: classId)
+          .get();
+      for (final doc in childrenSnap.docs) {
+        await doc.reference.delete();
+      }
+    } catch (e) {
+      print('ℹ️ Suppression Firestore classe: $e');
+    }
 
     SyncEngine.syncAll(teacherId: widget.user.id!);
     _refreshClasses();

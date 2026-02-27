@@ -493,6 +493,10 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                                     );
                                     if (confirmed == true) {
                                       await DBService.deleteStudent(s['id']);
+                                      // ✅ Sync → supprime aussi dans Firestore
+                                      SyncEngine.syncAll(
+                                        teacherId: widget.mainTeacherId,
+                                      );
                                       _refreshStudents();
                                     }
                                   }

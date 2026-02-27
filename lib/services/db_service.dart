@@ -1,4 +1,5 @@
 import 'package:sqflite/sqflite.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:path/path.dart';
 import '../models/teachers.dart';
 
@@ -314,16 +315,44 @@ class DBService {
     final db = await database;
     await db.update(
       'children',
-      {'deleted': 1, 'updated_at': DateTime.now().toIso8601String()},
+      {
+        'deleted': 1,
+        'synced': 0, // ✅ sera supprimé dans Firestore au prochain sync
+        'updated_at': DateTime.now().toIso8601String(),
+      },
       where: 'id = ?',
       whereArgs: [id],
     );
   }
 
-  // Supprimer définitivement
+  // Supprimer définitivement (SQLite + Firestore)
   static Future<void> deleteStudent(int id) async {
     final db = await database;
+
+    // 1) Récupérer le child_code pour supprimer dans Firestore
+    final rows = await db.query(
+      'children',
+      columns: ['id', 'child_code'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+
+    // 2) Supprimer dans SQLite
     await db.delete('children', where: 'id = ?', whereArgs: [id]);
+
+    // 3) Supprimer dans Firestore
+    if (rows.isNotEmpty) {
+      final childCode = rows.first['child_code']?.toString();
+      final docId = childCode ?? 'child_$id';
+      try {
+        final fs = FirebaseFirestore.instance;
+        // Essayer par child_code d'abord
+        await fs.collection('children').doc(docId).delete();
+      } catch (e) {
+        print('ℹ️ Suppression Firestore enfant: $e');
+      }
+    }
   }
 
   static Future<List<Map<String, dynamic>>> getArchivedStudentsByClass(
@@ -792,6 +821,25 @@ class DBService {
     }
 
     return stats;
+  }
+
+  // ===== TOUS LES ÉLÈVES D'UNE ÉCOLE (pour Admin fallback) =====
+  static Future<List<Map<String, dynamic>>> getAllStudentsInSchool({
+    required String schoolName,
+    required String schoolCity,
+  }) async {
+    final db = await database;
+    return await db.rawQuery(
+      '''
+      SELECT ch.* FROM children ch
+      INNER JOIN classes cl ON ch.class_id = cl.id
+      WHERE cl.school_name = ?
+        AND cl.school_city = ?
+        AND ch.deleted = 0
+      ORDER BY ch.first_name ASC
+    ''',
+      [schoolName, schoolCity],
+    );
   }
 
   static Future<List<Map<String, dynamic>>> getTeachersBySchool({

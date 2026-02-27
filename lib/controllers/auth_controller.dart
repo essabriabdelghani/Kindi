@@ -169,6 +169,116 @@ class AuthController {
   }
 
   // ═══════════════════════════════════════════════════════
+  //  ÉTAPE 1 INSCRIPTION : Vérifier email avant de créer compte
+  //  → Crée un compte Firebase temporaire, envoie verification,
+  //    puis supprime le compte Firebase (SQLite pas encore touché)
+  // ═══════════════════════════════════════════════════════
+  static Future<String?> sendVerificationBeforeRegister({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      // Créer compte Firebase temporaire
+      final cred = await _fbAuth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      // Envoyer email de vérification
+      await cred.user?.sendEmailVerification();
+      // Déconnecter (on garde juste l'email en attente)
+      await _fbAuth.signOut();
+      print('✅ Email vérification envoyé à $email');
+      return null; // null = succès
+    } on fb.FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'email-already-in-use':
+          // Vérifier si l'email est déjà vérifié
+          try {
+            final cred = await _fbAuth.signInWithEmailAndPassword(
+              email: email,
+              password: password,
+            );
+            if (cred.user?.emailVerified == true) {
+              await _fbAuth.signOut();
+              return 'email_already_verified'; // compte existant vérifié
+            }
+            // Pas vérifié → renvoyer email
+            await cred.user?.sendEmailVerification();
+            await _fbAuth.signOut();
+            return null;
+          } catch (_) {
+            return 'Email déjà utilisé avec un autre mot de passe';
+          }
+        case 'invalid-email':
+          return 'Format email invalide';
+        case 'weak-password':
+          return 'Mot de passe trop faible (min 6 caractères)';
+        default:
+          return 'Erreur réseau, réessayez';
+      }
+    } catch (e) {
+      return 'Erreur : $e';
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  ÉTAPE 2 INSCRIPTION : Compléter après vérification email
+  //  → User a cliqué le lien → on finalise SQLite
+  // ═══════════════════════════════════════════════════════
+  static Future<RegisterResult> completeRegistrationAfterVerification(
+    Teacher teacher,
+  ) async {
+    try {
+      final plainPassword = teacher.passwordHash;
+      final passwordHash = SecurityHelper.hashPassword(plainPassword);
+
+      // Connecter pour vérifier que l'email est bien vérifié
+      final cred = await _fbAuth.signInWithEmailAndPassword(
+        email: teacher.email,
+        password: plainPassword,
+      );
+
+      if (cred.user == null || !cred.user!.emailVerified) {
+        await _fbAuth.signOut();
+        return RegisterResult.emailNotVerified; // email pas encore confirmé
+      }
+
+      // Email vérifié ✅ → sauvegarder dans SQLite
+      final now = DateTime.now().toIso8601String();
+      teacher.passwordHash = passwordHash;
+      teacher.createdAt = now;
+      teacher.updatedAt = now;
+      teacher.synced = 0;
+      teacher.isActive = 1;
+      teacher.deleted = 0;
+
+      final success = await DBService.insertTeacher(teacher);
+      if (!success) {
+        await _fbAuth.signOut();
+        return RegisterResult.emailAlreadyUsed;
+      }
+
+      // Sync Firestore
+      final saved = await DBService.login(
+        email: teacher.email,
+        passwordHash: passwordHash,
+      );
+      if (saved != null) _syncNewTeacher(saved);
+
+      await _fbAuth.signOut();
+      return RegisterResult.success;
+    } on fb.FirebaseAuthException catch (e) {
+      if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+        return RegisterResult.error;
+      }
+      return RegisterResult.error;
+    } catch (e) {
+      print('🔥 Erreur completeRegistration: $e');
+      return RegisterResult.error;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
   //  RENVOYER EMAIL VÉRIFICATION
   // ═══════════════════════════════════════════════════════
   static Future<void> resendVerificationEmail({
@@ -253,6 +363,7 @@ enum RegisterResult {
   emailAlreadyUsed,
   weakPassword,
   invalidEmail,
+  emailNotVerified,
   error;
 
   String get message {
@@ -265,6 +376,8 @@ enum RegisterResult {
         return '❌ Mot de passe trop faible (6 caractères min)';
       case invalidEmail:
         return '❌ Email invalide';
+      case emailNotVerified:
+        return '⚠️ Email pas encore confirmé';
       case error:
         return '❌ Une erreur est survenue';
     }
