@@ -214,6 +214,41 @@ class DBService {
     return null;
   }
 
+  // ===== GET TEACHER BY EMAIL (sans vérifier password) =====
+  // Utilisé pour mettre à jour le hash après reset password Firebase
+  static Future<Teacher?> getTeacherByEmail(String email) async {
+    final db = await database;
+    final result = await db.query(
+      'teachers',
+      where: 'email = ? AND is_active = 1 AND deleted = 0',
+      whereArgs: [email],
+      limit: 1,
+    );
+    if (result.isNotEmpty) return Teacher.fromMap(result.first);
+    return null;
+  }
+
+  // ===== UPDATE PASSWORD HASH =====
+  // Appelé après reset password Firebase pour synchroniser SQLite
+  static Future<void> updatePasswordHash({
+    required String email,
+    required String newPasswordHash,
+  }) async {
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+    await db.update(
+      'teachers',
+      {
+        'password_hash': newPasswordHash,
+        'synced': 0, // re-sync vers Firestore
+        'updated_at': now,
+      },
+      where: 'email = ? AND deleted = 0',
+      whereArgs: [email],
+    );
+    print('✅ Password hash mis à jour dans SQLite pour $email');
+  }
+
   // ===== GET CLASSES OF TEACHER =====
   static Future<List<Map<String, dynamic>>> getClassesByTeacher(
     int teacherId,

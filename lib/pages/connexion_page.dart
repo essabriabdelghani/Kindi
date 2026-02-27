@@ -5,6 +5,7 @@ import 'InscriptionPage.dart';
 import '../utils/security_helper.dart';
 import 'main_layout.dart';
 import '../services/session_service.dart';
+import 'forgot_password_page.dart'; // ✅ AJOUTÉ
 
 class ConnexionPage extends StatefulWidget {
   const ConnexionPage({super.key});
@@ -14,66 +15,16 @@ class ConnexionPage extends StatefulWidget {
 }
 
 class _ConnexionPageState extends State<ConnexionPage> {
-  bool _showPassword = false;
-  bool _loading = false;
+  bool showPassword = false;
 
-  final _emailCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _emailCtrl.dispose();
-    _passwordCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _login(AppLocalizations t) async {
-    final email = _emailCtrl.text.trim();
-    final password = _passwordCtrl.text.trim();
-
-    if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(t.fillAllFields),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _loading = true);
-
-    final passwordHash = SecurityHelper.hashPassword(password);
-
-    final result = await AuthController.login(
-      email: email,
-      passwordHash: passwordHash,
-    );
-
-    if (!mounted) return;
-    setState(() => _loading = false);
-
-    if (result.success) {
-      SessionService.login(result.teacher!);
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => MainLayout(user: result.teacher!)),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.error ?? t.invalidCredentials),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
-    final deviceWidth = MediaQuery.of(context).size.width;
-    final cardWidth = deviceWidth > 600 ? 450.0 : deviceWidth * 0.9;
+    double deviceWidth = MediaQuery.of(context).size.width;
+    double cardWidth = deviceWidth > 600 ? 450 : deviceWidth * 0.9;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFCEFE3),
@@ -84,8 +35,8 @@ class _ConnexionPageState extends State<ConnexionPage> {
               const SizedBox(height: 20),
 
               // LOGO
-              const Column(
-                children: [
+              Column(
+                children: const [
                   CircleAvatar(
                     radius: 40,
                     backgroundColor: Colors.orange,
@@ -93,11 +44,12 @@ class _ConnexionPageState extends State<ConnexionPage> {
                   ),
                   SizedBox(height: 10),
                   Text(
-                    'KINDI',
+                    "KINDI",
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
+
               const SizedBox(height: 30),
 
               // CARD
@@ -127,122 +79,203 @@ class _ConnexionPageState extends State<ConnexionPage> {
                         ),
                       ),
                     ),
+
                     const SizedBox(height: 25),
 
                     // EMAIL
                     Text(t.email),
                     const SizedBox(height: 5),
                     TextField(
-                      controller: _emailCtrl,
+                      controller: emailController,
                       keyboardType: TextInputType.emailAddress,
-                      enabled: !_loading,
-                      decoration: _inputStyle(
+                      decoration: inputStyle(
                         hint: t.emailHint,
                         icon: Icons.email_outlined,
                       ),
                     ),
+
                     const SizedBox(height: 20),
 
                     // PASSWORD
                     Text(t.password),
                     const SizedBox(height: 5),
                     TextField(
-                      controller: _passwordCtrl,
-                      obscureText: !_showPassword,
-                      enabled: !_loading,
-                      onSubmitted: (_) => _login(t),
-                      decoration: _inputStyle(
+                      controller: passwordController,
+                      obscureText: !showPassword,
+                      decoration: inputStyle(
                         hint: t.passwordHint,
                         icon: Icons.lock_outline,
                         suffix: IconButton(
                           icon: Icon(
-                            _showPassword
+                            showPassword
                                 ? Icons.visibility
                                 : Icons.visibility_off,
                             color: Colors.orange,
                           ),
-                          onPressed: () =>
-                              setState(() => _showPassword = !_showPassword),
+                          onPressed: () {
+                            setState(() {
+                              showPassword = !showPassword;
+                            });
+                          },
                         ),
                       ),
                     ),
+
                     const SizedBox(height: 10),
 
-                    // MOT DE PASSE OUBLIÉ
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Fonctionnalité à venir'),
-                            ),
-                          );
-                        },
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ForgotPasswordPage(),
+                          ),
+                        ),
                         child: Text(
                           t.forgotPassword,
                           style: const TextStyle(color: Colors.orange),
                         ),
                       ),
                     ),
+
                     const SizedBox(height: 15),
 
-                    // BOUTON CONNEXION
+                    // BUTTON (frontend only)
                     SizedBox(
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: _loading ? null : () => _login(t),
+                        onPressed: () async {
+                          final email = emailController.text.trim();
+                          final password = passwordController.text.trim();
+
+                          if (email.isEmpty || password.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(t.fillAllFields)),
+                            );
+                            return;
+                          }
+                          final passwordHash = SecurityHelper.hashPassword(
+                            password,
+                          );
+                          final result = await AuthController.login(
+                            email: email,
+                            password: password, // ← EN CLAIR pour Firebase
+                            passwordHash: passwordHash, // ← hash pour SQLite
+                          );
+
+                          if (result.success) {
+                            SessionService.login(result.teacher!);
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    MainLayout(user: result.teacher!),
+                              ),
+                            );
+                          } else if (result.error == 'email_not_verified') {
+                            // ✅ Email existe mais pas encore vérifié
+                            showDialog(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.mark_email_unread,
+                                      color: Colors.orange,
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text("Email non confirmé"),
+                                  ],
+                                ),
+                                content: const Text(
+                                  "Votre email n'est pas encore confirmé.\n\n"
+                                  "Vérifiez votre boîte mail et cliquez sur le lien d'activation.",
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: const Text("Fermer"),
+                                  ),
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.send,
+                                      color: Colors.white,
+                                    ),
+                                    label: const Text(
+                                      "Renvoyer l'email",
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                    onPressed: () async {
+                                      Navigator.pop(context);
+                                      await AuthController.resendVerificationEmail(
+                                        email: email,
+                                        password: password,
+                                      );
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            "Email renvoyé ✅ Vérifiez votre boîte",
+                                          ),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            );
+                          } else {
+                            // Email/password incorrect
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  result.error ?? t.invalidCredentials,
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.orange,
-                          disabledBackgroundColor: Colors.orange.withOpacity(
-                            0.5,
-                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(15),
                           ),
                         ),
-                        child: _loading
-                            ? const SizedBox(
-                                height: 22,
-                                width: 22,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2.5,
-                                ),
-                              )
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.login, color: Colors.white),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    t.signIn,
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.login, color: Colors.white),
+                            SizedBox(width: 10),
+                            Text(t.signIn, style: TextStyle(fontSize: 18)),
+                          ],
+                        ),
                       ),
                     ),
+
                     const SizedBox(height: 20),
 
-                    // CRÉER UN COMPTE
+                    // CREATE ACCOUNT
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(t.noAccount),
                         TextButton(
-                          onPressed: _loading
-                              ? null
-                              : () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const InscriptionPage(),
-                                  ),
-                                ),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const InscriptionPage(),
+                              ),
+                            );
+                          },
                           child: Text(
                             t.createAccount,
                             style: const TextStyle(color: Colors.orange),
@@ -253,7 +286,6 @@ class _ConnexionPageState extends State<ConnexionPage> {
                   ],
                 ),
               ),
-              const SizedBox(height: 30),
             ],
           ),
         ),
@@ -261,7 +293,7 @@ class _ConnexionPageState extends State<ConnexionPage> {
     );
   }
 
-  InputDecoration _inputStyle({
+  InputDecoration inputStyle({
     required String hint,
     required IconData icon,
     Widget? suffix,

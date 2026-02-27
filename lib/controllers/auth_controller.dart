@@ -18,16 +18,21 @@ class AuthController {
   // ═══════════════════════════════════════════════════════
   static Future<RegisterResult> register(Teacher teacher) async {
     try {
-      // ✅ Hash UNE SEULE FOIS ici
-      final passwordHash = SecurityHelper.hashPassword(teacher.passwordHash);
+      // ✅ Garder le mot de passe clair pour Firebase
+      final plainPassword = teacher.passwordHash; // clair pour Firebase Auth
+      final passwordHash = SecurityHelper.hashPassword(
+        plainPassword,
+      ); // hash pour SQLite
 
-      // 1️⃣ FIREBASE AUTH
+      // 1️⃣ FIREBASE AUTH — mot de passe EN CLAIR
       try {
-        await _fbAuth.createUserWithEmailAndPassword(
+        final cred = await _fbAuth.createUserWithEmailAndPassword(
           email: teacher.email,
-          password: passwordHash, // ← hash envoyé à Firebase
+          password: plainPassword,
         );
-        print('✅ Firebase Auth : compte créé');
+        // ✅ Envoyer email de vérification
+        await cred.user?.sendEmailVerification();
+        print('✅ Firebase Auth : compte créé + email vérification envoyé');
       } on fb.FirebaseAuthException catch (e) {
         switch (e.code) {
           case 'email-already-in-use':
@@ -89,38 +94,54 @@ class AuthController {
   // ═══════════════════════════════════════════════════════
   static Future<LoginResult> login({
     required String email,
-    required String passwordHash, // ← reçoit déjà le hash de ConnexionPage
+    required String password, // ← mot de passe EN CLAIR pour Firebase
+    required String passwordHash, // ← hash SHA-256 pour SQLite
   }) async {
-    // 1️⃣ FIREBASE AUTH — envoyer le hash directement (pas re-hasher)
+    // 1️⃣ FIREBASE AUTH — mot de passe EN CLAIR
     bool firebaseOk = false;
     try {
-      await _fbAuth.signInWithEmailAndPassword(
+      final cred = await _fbAuth.signInWithEmailAndPassword(
         email: email,
-        password: passwordHash, // ← même hash que register
+        password: password,
       );
+      final fbUser = cred.user;
+      if (fbUser != null && !fbUser.emailVerified) {
+        // Email pas vérifié → déconnecter et bloquer
+        await _fbAuth.signOut();
+        return LoginResult(teacher: null, error: 'email_not_verified');
+      }
       firebaseOk = true;
       print('✅ Firebase Auth : connecté');
     } on fb.FirebaseAuthException catch (e) {
-      // Ces codes = mauvais credentials → refuser
       if (e.code == 'user-not-found' ||
           e.code == 'wrong-password' ||
           e.code == 'invalid-credential' ||
           e.code == 'INVALID_LOGIN_CREDENTIALS') {
         print('❌ Firebase Auth : ${e.code}');
-        // ⚠️ On essaie quand même SQLite (cas : compte créé hors-ligne)
       } else {
-        // Hors-ligne ou autre → continuer avec SQLite
         print('ℹ️ Firebase hors ligne: ${e.code}');
       }
     } catch (e) {
       print('ℹ️ Pas de réseau: $e');
     }
 
-    // 2️⃣ SQLITE LOCAL — source de vérité locale
-    final teacher = await DBService.login(
+    // 2️⃣ SQLITE LOCAL — avec le hash SHA-256
+    Teacher? teacher = await DBService.login(
       email: email,
       passwordHash: passwordHash,
     );
+
+    // ✅ CAS RESET PASSWORD :
+    // Firebase OK (nouveau mdp en clair) mais SQLite a l'ancien hash
+    // → mettre à jour SQLite avec le nouveau hash
+    if (teacher == null && firebaseOk) {
+      print('🔄 Reset password détecté → mise à jour SQLite');
+      await DBService.updatePasswordHash(
+        email: email,
+        newPasswordHash: passwordHash,
+      );
+      teacher = await DBService.getTeacherByEmail(email);
+    }
 
     if (teacher == null) {
       return LoginResult(
@@ -131,9 +152,7 @@ class AuthController {
 
     // 3️⃣ SESSION + SYNC
     SessionService.login(teacher);
-    _syncAfterLogin(
-      teacher,
-    ); // ✅ Fix : toujours sync, même si Firebase Auth hors-ligne
+    _syncAfterLogin(teacher);
 
     return LoginResult(teacher: teacher);
   }
@@ -146,6 +165,26 @@ class AuthController {
       SyncEngine.startConnectivityWatcher(teacherId: teacher.id!);
     } catch (e) {
       print('ℹ️ Sync différée: $e');
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  RENVOYER EMAIL VÉRIFICATION
+  // ═══════════════════════════════════════════════════════
+  static Future<void> resendVerificationEmail({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final credential = await _fbAuth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      await credential.user?.sendEmailVerification();
+      await _fbAuth.signOut();
+      print('✅ Email vérification renvoyé à $email');
+    } catch (e) {
+      print('❌ Erreur renvoi email: $e');
     }
   }
 
@@ -235,6 +274,8 @@ enum RegisterResult {
 class LoginResult {
   final Teacher? teacher;
   final String? error;
+
   bool get success => teacher != null;
+
   LoginResult({required this.teacher, this.error});
 }
