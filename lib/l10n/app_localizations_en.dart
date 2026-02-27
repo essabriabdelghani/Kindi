@@ -82,4 +82,58 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get passwordsNotMatch => 'Passwords do not match';
+
+  @override
+  String get emailNotVerified => 'Email not confirmed — check your inbox';
+
+  @override
+  String get language => 'Language';
+
+  @override
+  String get settings => 'Settings';
+
+  @override
+  String get logout => 'Logout';
+
+  @override
+  String get profile => 'Profile';
+
+  @override
+  String get myClasses => 'My classes';
+
+  @override
+  String get students => 'Students';
+
+  @override
+  String get observations => 'Observations';
+
+  @override
+  String get newObservation => 'New observation';
+
+  @override
+  String get save => 'Save';
+
+  @override
+  String get cancel => 'Cancel';
+
+  @override
+  String get delete => 'Delete';
+
+  @override
+  String get edit => 'Edit';
+
+  @override
+  String get confirmDelete => 'Confirm deletion';
+
+  @override
+  String get yes => 'Yes';
+
+  @override
+  String get no => 'No';
+
+  @override
+  String get search => 'Search';
+
+  @override
+  String get noData => 'No data';
 }

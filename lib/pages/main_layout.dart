@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:kindi/pages/MesClassesPage.dart';
 import 'package:kindi/pages/ProfHomePage.dart';
 import 'package:kindi/pages/AdminPage.dart';
-import 'package:kindi/pages/connexion_page.dart'; // ✅ import direct
+import 'package:kindi/pages/connexion_page.dart';
 import 'package:kindi/widgets/app_drawer.dart';
 import 'package:kindi/widgets/sync_status_widget.dart';
 import '../models/teachers.dart';
 import '../controllers/auth_controller.dart';
+import '../widgets/language_selector.dart';
 
 class MainLayout extends StatefulWidget {
   final Teacher user;
@@ -49,10 +50,9 @@ class _MainLayoutState extends State<MainLayout> {
   void _onSelectPage(int index) {
     if (index < 0 || index >= pages.length) index = 0;
     setState(() => selectedIndex = index);
-    Navigator.pop(context); // fermer le drawer
+    Navigator.pop(context);
   }
 
-  // ✅ Fix 1 : logout complet Firebase + Session + SyncEngine
   Future<void> _logout() async {
     await AuthController.logout();
     if (!mounted) return;
@@ -61,6 +61,17 @@ class _MainLayoutState extends State<MainLayout> {
       MaterialPageRoute(builder: (_) => const ConnexionPage()),
       (route) => false,
     );
+  }
+
+  String _roleLabel(String role) {
+    switch (role) {
+      case 'admin':
+        return '🔑 Administrateur';
+      case 'super_admin':
+        return '👑 Super Admin';
+      default:
+        return '👤 Professeur';
+    }
   }
 
   @override
@@ -95,7 +106,9 @@ class _MainLayoutState extends State<MainLayout> {
           ],
         ),
         actions: [
-          // ✅ Fix 2 : guard sur user.id avant le !
+          // ✅ Sélecteur de langue
+          const LanguageSelector(),
+          // ✅ Sync status
           if (widget.user.id != null)
             SyncStatusWidget(teacherId: widget.user.id!),
         ],
@@ -103,23 +116,12 @@ class _MainLayoutState extends State<MainLayout> {
       drawer: AppDrawer(
         onSelect: _onSelectPage,
         user: widget.user,
-        onLogout: _logout, // ✅ Fix 1 : logout Firebase via le drawer
+        onLogout: _logout,
       ),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 250),
         child: pages[selectedIndex],
       ),
     );
-  }
-
-  String _roleLabel(String role) {
-    switch (role) {
-      case 'admin':
-        return '🔑 Administrateur';
-      case 'super_admin':
-        return '👑 Super Admin';
-      default:
-        return '👤 Professeur';
-    }
   }
 }

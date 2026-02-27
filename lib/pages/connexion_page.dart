@@ -5,7 +5,8 @@ import 'InscriptionPage.dart';
 import '../utils/security_helper.dart';
 import 'main_layout.dart';
 import '../services/session_service.dart';
-import 'forgot_password_page.dart'; // ✅ AJOUTÉ
+import 'forgot_password_page.dart';
+import '../widgets/language_selector.dart'; // ✅ AJOUTÉ
 
 class ConnexionPage extends StatefulWidget {
   const ConnexionPage({super.key});
@@ -28,6 +29,12 @@ class _ConnexionPageState extends State<ConnexionPage> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFFCEFE3),
+      // ✅ Bouton langue en haut à droite
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: const [LanguageSelector()],
+      ),
       body: Center(
         child: SingleChildScrollView(
           child: Column(

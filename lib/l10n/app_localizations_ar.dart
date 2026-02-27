@@ -15,7 +15,7 @@ class AppLocalizationsAr extends AppLocalizations {
   String get appSubtitle => 'تدبير وتتبع الأطفال';
 
   @override
-  String get welcome => 'مرحبا';
+  String get welcome => 'مرحباً';
 
   @override
   String get email => 'البريد الإلكتروني';
@@ -82,4 +82,59 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get passwordsNotMatch => 'كلمتا المرور غير متطابقتين';
+
+  @override
+  String get emailNotVerified =>
+      'البريد الإلكتروني غير مؤكد — تحقق من صندوق الوارد';
+
+  @override
+  String get language => 'اللغة';
+
+  @override
+  String get settings => 'الإعدادات';
+
+  @override
+  String get logout => 'تسجيل الخروج';
+
+  @override
+  String get profile => 'الملف الشخصي';
+
+  @override
+  String get myClasses => 'فصولي';
+
+  @override
+  String get students => 'التلاميذ';
+
+  @override
+  String get observations => 'الملاحظات';
+
+  @override
+  String get newObservation => 'ملاحظة جديدة';
+
+  @override
+  String get save => 'حفظ';
+
+  @override
+  String get cancel => 'إلغاء';
+
+  @override
+  String get delete => 'حذف';
+
+  @override
+  String get edit => 'تعديل';
+
+  @override
+  String get confirmDelete => 'تأكيد الحذف';
+
+  @override
+  String get yes => 'نعم';
+
+  @override
+  String get no => 'لا';
+
+  @override
+  String get search => 'بحث';
+
+  @override
+  String get noData => 'لا توجد بيانات';
 }

@@ -36,7 +36,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get signIn => 'Se connecter';
 
   @override
-  String get signUp => 'S’inscrire';
+  String get signUp => 'S\'inscrire';
 
   @override
   String get or => 'ou';
@@ -82,4 +82,59 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get passwordsNotMatch => 'Les mots de passe ne correspondent pas';
+
+  @override
+  String get emailNotVerified =>
+      'Email non confirmé — vérifiez votre boîte mail';
+
+  @override
+  String get language => 'Langue';
+
+  @override
+  String get settings => 'Paramètres';
+
+  @override
+  String get logout => 'Déconnexion';
+
+  @override
+  String get profile => 'Profil';
+
+  @override
+  String get myClasses => 'Mes classes';
+
+  @override
+  String get students => 'Élèves';
+
+  @override
+  String get observations => 'Observations';
+
+  @override
+  String get newObservation => 'Nouvelle observation';
+
+  @override
+  String get save => 'Enregistrer';
+
+  @override
+  String get cancel => 'Annuler';
+
+  @override
+  String get delete => 'Supprimer';
+
+  @override
+  String get edit => 'Modifier';
+
+  @override
+  String get confirmDelete => 'Confirmer la suppression';
+
+  @override
+  String get yes => 'Oui';
+
+  @override
+  String get no => 'Non';
+
+  @override
+  String get search => 'Rechercher';
+
+  @override
+  String get noData => 'Aucune donnée';
 }
