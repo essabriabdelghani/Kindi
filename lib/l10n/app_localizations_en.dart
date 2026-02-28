@@ -136,4 +136,227 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get noData => 'No data';
+
+  @override
+  String get home => 'Home';
+
+  @override
+  String get myStudents => 'My students';
+
+  @override
+  String get addClass => 'Add a class';
+
+  @override
+  String get addStudent => 'Add a student';
+
+  @override
+  String get className => 'Class name';
+
+  @override
+  String get level => 'Level';
+
+  @override
+  String get academicYear => 'Academic year';
+
+  @override
+  String get noClasses => 'No classes found.';
+
+  @override
+  String get noClassesHint => 'Press + to add one.';
+
+  @override
+  String get noStudents => 'No students found.';
+
+  @override
+  String get noStudentsHint => 'Press + to add one.';
+
+  @override
+  String get noArchivedStudents => 'No archived students.';
+
+  @override
+  String get classAdded => 'Class added ✅';
+
+  @override
+  String get deleteClass => 'Delete class';
+
+  @override
+  String get deleteStudent => 'Delete student';
+
+  @override
+  String get deleteClassConfirm => 'Delete this class?';
+
+  @override
+  String get deleteStudentConfirm => 'Delete permanently?';
+
+  @override
+  String get archive => 'Archive';
+
+  @override
+  String get unarchive => 'Unarchive';
+
+  @override
+  String get archived => 'Archived';
+
+  @override
+  String get active => 'Active';
+
+  @override
+  String get synchronizing => 'Synchronizing...';
+
+  @override
+  String get error => 'Error';
+
+  @override
+  String get dateOfBirth => 'Date of birth';
+
+  @override
+  String get dateOfBirthRequired => 'Date of birth required';
+
+  @override
+  String get gender => 'Gender';
+
+  @override
+  String get boy => 'Boy';
+
+  @override
+  String get girl => 'Girl';
+
+  @override
+  String get riskLevel => 'Risk level';
+
+  @override
+  String get riskGreen => 'Green';
+
+  @override
+  String get riskOrange => 'Orange';
+
+  @override
+  String get riskRed => 'Red';
+
+  @override
+  String get riskUndefined => 'Undefined';
+
+  @override
+  String get childProfile => 'Child profile';
+
+  @override
+  String get addObservation => 'Add observation';
+
+  @override
+  String get noObservations => 'No observations.';
+
+  @override
+  String get lastRisk => 'Last level';
+
+  @override
+  String get notes => 'Notes';
+
+  @override
+  String get context => 'Context';
+
+  @override
+  String get freePlay => 'Free play';
+
+  @override
+  String get activity => 'Activity';
+
+  @override
+  String get grouping => 'Grouping';
+
+  @override
+  String get never => 'Never';
+
+  @override
+  String get sometimes => 'Sometimes';
+
+  @override
+  String get often => 'Often';
+
+  @override
+  String get observationSaved => 'Observation saved ✅';
+
+  @override
+  String get answerAllQuestions => 'Please answer all questions.';
+
+  @override
+  String get addNote => 'Add a note...';
+
+  @override
+  String get add => 'Add';
+
+  @override
+  String get contextOptional => 'Context (optional)';
+
+  @override
+  String get notesOptional => 'Notes (optional)';
+
+  @override
+  String get administration => 'Administration';
+
+  @override
+  String get allTeachers => 'All Teachers';
+
+  @override
+  String get allStudents => 'All Students';
+
+  @override
+  String get allTeachersSubtitle => 'View all teachers with their schools';
+
+  @override
+  String get allStudentsSubtitle => 'Display all students from all classes';
+
+  @override
+  String get addTeacher => 'Add teacher';
+
+  @override
+  String get archiveTeacher => 'Archive teacher';
+
+  @override
+  String get noTeachers => 'No teachers found.';
+
+  @override
+  String get yearsExperience => 'Years of experience';
+
+  @override
+  String get activate => 'Activate';
+
+  @override
+  String get deactivate => 'Deactivate';
+
+  @override
+  String get offlineMode => 'Offline mode — local data only';
+
+  @override
+  String get verifyEmail => 'Verify my email';
+
+  @override
+  String get emailSentTo => 'An email was sent to';
+
+  @override
+  String get confirmEmailSteps =>
+      'Open your inbox and click the confirmation link';
+
+  @override
+  String get iConfirmedEmail => 'I confirmed my email ✅';
+
+  @override
+  String get resendEmail => 'Resend email';
+
+  @override
+  String get emailResent => 'Email resent ✅';
+
+  @override
+  String get modifyInfo => '← Modify my information';
+
+  @override
+  String get confirmEmailTitle => 'Confirm your email';
+
+  @override
+  String get roleTeacher => 'Teacher';
+
+  @override
+  String get roleAdmin => 'Administrator';
+
+  @override
+  String get roleSuperAdmin => 'Super Admin';
 }

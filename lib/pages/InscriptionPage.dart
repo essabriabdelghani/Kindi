@@ -71,13 +71,14 @@ class _InscriptionPageState extends State<InscriptionPage> {
     setState(() => _loading = true);
 
     // Garder les données du teacher en mémoire
+    // Normaliser school_name/city → minuscules pour matcher le filtre admin
     _pendingTeacher = Teacher(
       firstName: _firstNameCtrl.text.trim(),
       lastName: _lastNameCtrl.text.trim(),
       email: _emailCtrl.text.trim(),
       phoneNumber: _phoneCtrl.text.trim(),
-      schoolName: _schoolCtrl.text.trim(),
-      schoolCity: _cityCtrl.text.trim(),
+      schoolName: _schoolCtrl.text.trim().toLowerCase(),
+      schoolCity: _cityCtrl.text.trim().toLowerCase(),
       role: 'teacher',
       passwordHash: _passwordCtrl.text.trim(), // clair, sera hashé plus tard
     );

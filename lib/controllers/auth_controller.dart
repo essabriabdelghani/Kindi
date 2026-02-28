@@ -63,7 +63,7 @@ class AuthController {
         email: teacher.email,
         passwordHash: passwordHash,
       );
-      if (saved != null) _syncNewTeacher(saved);
+      if (saved != null) await _syncNewTeacher(saved);
 
       return RegisterResult.success;
     } catch (e) {
@@ -72,19 +72,50 @@ class AuthController {
     }
   }
 
+  // ═══════════════════════════════════════════════════════
+  //  SYNC INSCRIPTION → FIRESTORE
+  //  Appelé après chaque inscription réussie
+  //  Retry automatique x3 pour garantir que l'admin voit le prof
+  // ═══════════════════════════════════════════════════════
   static Future<void> _syncNewTeacher(Teacher teacher) async {
-    try {
-      await FirestoreService.upsertTeacher(teacher);
-      final db = await DBService.database;
-      await db.update(
-        'teachers',
-        {'synced': 1},
-        where: 'id = ?',
-        whereArgs: [teacher.id],
-      );
-    } catch (e) {
-      print('ℹ️ Sync différée: $e');
+    const maxRetries = 3;
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Envoyer vers Firestore — admin verra le prof en temps réel
+        await FirestoreService.upsertTeacher(teacher);
+
+        // Marquer synced=1 dans SQLite
+        final db = await DBService.database;
+        await db.update(
+          'teachers',
+          {'synced': 1},
+          where: 'id = ?',
+          whereArgs: [teacher.id],
+        );
+
+        print(
+          '✅ Nouveau prof synced vers Firestore (tentative ' +
+              attempt.toString() +
+              ')',
+        );
+        return; // succès → sortir
+      } catch (e) {
+        print(
+          '⚠️ Sync tentative ' +
+              attempt.toString() +
+              '/' +
+              maxRetries.toString() +
+              ' : ' +
+              e.toString(),
+        );
+        if (attempt < maxRetries) {
+          // Attendre avant de réessayer (1s, 2s, 3s)
+          await Future.delayed(Duration(seconds: attempt));
+        }
+      }
     }
+    // Après 3 échecs → synced reste 0, SyncEngine l'enverra au prochain lancement
+    print('ℹ️ Sync différée — sera envoyée au prochain lancement');
   }
 
   // ═══════════════════════════════════════════════════════
@@ -150,11 +181,48 @@ class AuthController {
       );
     }
 
-    // 3️⃣ SESSION + SYNC
+    // 3️⃣ SYNC RÔLE DEPUIS FIRESTORE — Firestore fait autorité
+    teacher = await _syncRoleFromFirestore(teacher) ?? teacher;
+
+    // 4️⃣ SESSION + SYNC
     SessionService.login(teacher);
     _syncAfterLogin(teacher);
 
     return LoginResult(teacher: teacher);
+  }
+
+  // ── Lire le rôle depuis Firestore au login ──────────────
+  // Firestore est la seule source de vérité pour le rôle
+  // Un professeur ne peut PAS changer son propre rôle
+  static Future<Teacher?> _syncRoleFromFirestore(Teacher teacher) async {
+    try {
+      final doc = await _firestore
+          .collection('teachers')
+          .doc('teacher_' + teacher.id.toString())
+          .get();
+
+      if (!doc.exists) return null;
+      final data = doc.data();
+      if (data == null) return null;
+
+      final remoteRole = data['role'] as String? ?? 'teacher';
+
+      if (remoteRole != teacher.role) {
+        // Mettre à jour SQLite avec le rôle Firestore
+        final db = await DBService.database;
+        await db.rawUpdate(
+          'UPDATE teachers SET role = ?, synced = 1 WHERE id = ?',
+          [remoteRole, teacher.id],
+        );
+        print('✅ Rôle sync depuis Firestore: ' + remoteRole);
+        return teacher.copyWith(role: remoteRole);
+      }
+      return teacher;
+    } catch (e) {
+      // Offline → garder le rôle SQLite local
+      print('ℹ️ Firestore offline au login: ' + e.toString());
+      return null;
+    }
   }
 
   static Future<void> _syncAfterLogin(Teacher teacher) async {
@@ -252,18 +320,22 @@ class AuthController {
       teacher.isActive = 1;
       teacher.deleted = 0;
 
+      // Normaliser school avant insert (match admin filter)
+      teacher.schoolName = teacher.schoolName.trim().toLowerCase();
+      teacher.schoolCity = teacher.schoolCity.trim().toLowerCase();
+
       final success = await DBService.insertTeacher(teacher);
       if (!success) {
         await _fbAuth.signOut();
         return RegisterResult.emailAlreadyUsed;
       }
 
-      // Sync Firestore
+      // Sync Firestore immédiat — admin verra le prof en temps réel
       final saved = await DBService.login(
         email: teacher.email,
         passwordHash: passwordHash,
       );
-      if (saved != null) _syncNewTeacher(saved);
+      if (saved != null) await _syncNewTeacher(saved);
 
       await _fbAuth.signOut();
       return RegisterResult.success;
@@ -307,38 +379,6 @@ class AuthController {
     try {
       await _fbAuth.signOut();
     } catch (_) {}
-  }
-
-  // ═══════════════════════════════════════════════════════
-  //  CHANGER LE RÔLE
-  // ═══════════════════════════════════════════════════════
-  static Future<bool> changeRole({
-    required Teacher currentUser,
-    required int targetTeacherId,
-    required String newRole,
-  }) async {
-    final canChange =
-        currentUser.role == 'super_admin' ||
-        (currentUser.role == 'admin' && newRole != 'super_admin');
-    if (!canChange) return false;
-
-    try {
-      await DBService.updateTeacher(
-        teacherId: targetTeacherId,
-        data: {'role': newRole, 'synced': 0},
-      );
-      await _firestore
-          .collection('teachers')
-          .doc('teacher_$targetTeacherId')
-          .update({
-            'role': newRole,
-            'updated_at': FieldValue.serverTimestamp(),
-          });
-      return true;
-    } catch (e) {
-      print('❌ changeRole: $e');
-      return false;
-    }
   }
 
   // ═══════════════════════════════════════════════════════

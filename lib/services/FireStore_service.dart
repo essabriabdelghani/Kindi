@@ -1,3 +1,4 @@
+// ============================================================
 // firestore_service.dart — lib/services/firestore_service.dart
 //
 // Gère la logique de rôles dans Firestore :
@@ -8,6 +9,7 @@
 //
 // Les données sont filtrées par school_name + school_city pour
 // isoler les écoles entre elles.
+// ============================================================
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/teachers.dart';
@@ -15,19 +17,29 @@ import '../models/teachers.dart';
 class FirestoreService {
   static final _db = FirebaseFirestore.instance;
 
+  // ═══════════════════════════════════════════════════════
+  //  TEACHERS / USERS
+  // ═══════════════════════════════════════════════════════
+
   /// Créer ou mettre à jour le profil d'un teacher dans Firestore
   /// Appelé à l'inscription ET après chaque mise à jour de profil
   static Future<void> upsertTeacher(Teacher t) async {
-    await _db.collection('teachers').doc('teacher_${t.id}').set({
+    // Normaliser school pour garantir le matching admin ↔ prof
+    final schoolName = t.schoolName.trim().toLowerCase();
+    final schoolCity = t.schoolCity.trim().toLowerCase();
+    final schoolKey = schoolName + '__' + schoolCity; // index composite
+
+    await _db.collection('teachers').doc('teacher_' + t.id.toString()).set({
       'local_id': t.id,
       'first_name': t.firstName,
       'last_name': t.lastName ?? '',
       'email': t.email,
       'phone_number': t.phoneNumber ?? '',
-      'school_name': t.schoolName,
-      'school_city': t.schoolCity,
+      'school_name': schoolName, // ✅ toujours lowercase
+      'school_city': schoolCity, // ✅ toujours lowercase
+      'school_key': schoolKey, // ✅ index composite pour requête fiable
       'school_region': t.schoolRegion ?? '',
-      'role': t.role, // 'teacher', 'admin', 'super_admin'
+      'role': t.role,
       'preferred_language': t.preferredLanguage,
       'years_of_experience': t.yearsOfExperience ?? 0,
       'grade_level': t.gradeLevel ?? '',
@@ -37,14 +49,23 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
+  // ─────────────────────────────────────────────────────────
+  //  LECTURE SELON RÔLE
+  // ─────────────────────────────────────────────────────────
+
   /// Teachers de la même école (pour Admin)
   static Stream<List<Map<String, dynamic>>> streamTeachersInSchool(
     Teacher admin,
   ) {
+    // Utiliser school_key normalisé pour éviter les problèmes de casse
+    final schoolKey =
+        admin.schoolName.trim().toLowerCase() +
+        '__' +
+        admin.schoolCity.trim().toLowerCase();
+
     return _db
         .collection('teachers')
-        .where('school_name', isEqualTo: admin.schoolName)
-        .where('school_city', isEqualTo: admin.schoolCity)
+        .where('school_key', isEqualTo: schoolKey)
         .where('deleted', isEqualTo: 0)
         .snapshots()
         .map(_docsToList);
@@ -60,7 +81,9 @@ class FirestoreService {
         .map(_docsToList);
   }
 
+  // ═══════════════════════════════════════════════════════
   //  CHILDREN — selon rôle
+  // ═══════════════════════════════════════════════════════
 
   /// Enfants du professeur connecté (Teacher)
   static Stream<List<Map<String, dynamic>>> streamMyChildren(Teacher t) {
@@ -99,7 +122,9 @@ class FirestoreService {
         .map(_docsToList);
   }
 
+  // ═══════════════════════════════════════════════════════
   //  OBSERVATIONS — selon rôle
+  // ═══════════════════════════════════════════════════════
 
   /// Observations faites par ce teacher
   static Stream<List<Map<String, dynamic>>> streamMyObservations(Teacher t) {
@@ -141,6 +166,10 @@ class FirestoreService {
         .map(_docsToList);
   }
 
+  // ═══════════════════════════════════════════════════════
+  //  STATS — tableaux de bord
+  // ═══════════════════════════════════════════════════════
+
   /// Stats risques pour le teacher (son tableau de bord)
   static Future<Map<String, int>> riskStatsForTeacher(Teacher t) async {
     final snap = await _db
@@ -176,7 +205,9 @@ class FirestoreService {
     return _computeRiskStats(snap.docs);
   }
 
+  // ─────────────────────────────────────────────────────────
   //  HELPERS
+  // ─────────────────────────────────────────────────────────
 
   static List<Map<String, dynamic>> _docsToList(QuerySnapshot snap) {
     return snap.docs

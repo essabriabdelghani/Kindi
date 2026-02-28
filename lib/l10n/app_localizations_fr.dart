@@ -137,4 +137,229 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get noData => 'Aucune donnée';
+
+  @override
+  String get home => 'Accueil';
+
+  @override
+  String get myStudents => 'Mes élèves';
+
+  @override
+  String get addClass => 'Ajouter une classe';
+
+  @override
+  String get addStudent => 'Ajouter un élève';
+
+  @override
+  String get className => 'Nom de la classe';
+
+  @override
+  String get level => 'Niveau';
+
+  @override
+  String get academicYear => 'Année scolaire';
+
+  @override
+  String get noClasses => 'Aucune classe trouvée.';
+
+  @override
+  String get noClassesHint => 'Appuyez sur + pour en ajouter une.';
+
+  @override
+  String get noStudents => 'Aucun élève trouvé.';
+
+  @override
+  String get noStudentsHint => 'Appuyez sur + pour en ajouter un.';
+
+  @override
+  String get noArchivedStudents => 'Aucun élève archivé.';
+
+  @override
+  String get classAdded => 'Classe ajoutée ✅';
+
+  @override
+  String get deleteClass => 'Supprimer la classe';
+
+  @override
+  String get deleteStudent => 'Supprimer l\'élève';
+
+  @override
+  String get deleteClassConfirm => 'Supprimer cette classe ?';
+
+  @override
+  String get deleteStudentConfirm => 'Supprimer définitivement ?';
+
+  @override
+  String get archive => 'Archiver';
+
+  @override
+  String get unarchive => 'Désarchiver';
+
+  @override
+  String get archived => 'Archivés';
+
+  @override
+  String get active => 'Actifs';
+
+  @override
+  String get synchronizing => 'Synchronisation...';
+
+  @override
+  String get error => 'Erreur';
+
+  @override
+  String get dateOfBirth => 'Date de naissance';
+
+  @override
+  String get dateOfBirthRequired => 'Date de naissance obligatoire';
+
+  @override
+  String get gender => 'Genre';
+
+  @override
+  String get boy => 'Garçon';
+
+  @override
+  String get girl => 'Fille';
+
+  @override
+  String get riskLevel => 'Niveau de risque';
+
+  @override
+  String get riskGreen => 'Vert';
+
+  @override
+  String get riskOrange => 'Orange';
+
+  @override
+  String get riskRed => 'Rouge';
+
+  @override
+  String get riskUndefined => 'Non défini';
+
+  @override
+  String get childProfile => 'Profil enfant';
+
+  @override
+  String get addObservation => 'Ajouter une observation';
+
+  @override
+  String get noObservations => 'Aucune observation.';
+
+  @override
+  String get lastRisk => 'Dernier niveau';
+
+  @override
+  String get notes => 'Notes';
+
+  @override
+  String get context => 'Contexte';
+
+  @override
+  String get freePlay => 'Jeu libre';
+
+  @override
+  String get activity => 'Activité';
+
+  @override
+  String get grouping => 'Regroupement';
+
+  @override
+  String get never => 'Jamais';
+
+  @override
+  String get sometimes => 'Parfois';
+
+  @override
+  String get often => 'Souvent';
+
+  @override
+  String get observationSaved => 'Observation enregistrée ✅';
+
+  @override
+  String get answerAllQuestions => 'Veuillez répondre à toutes les questions.';
+
+  @override
+  String get addNote => 'Ajouter une note...';
+
+  @override
+  String get add => 'Ajouter';
+
+  @override
+  String get contextOptional => 'Contexte (optionnel)';
+
+  @override
+  String get notesOptional => 'Notes (optionnel)';
+
+  @override
+  String get administration => 'Administration';
+
+  @override
+  String get allTeachers => 'Tous les Professeurs';
+
+  @override
+  String get allStudents => 'Tous les Élèves';
+
+  @override
+  String get allTeachersSubtitle =>
+      'Voir la liste de tous les professeurs avec leurs écoles';
+
+  @override
+  String get allStudentsSubtitle =>
+      'Afficher tous les élèves de toutes les classes';
+
+  @override
+  String get addTeacher => 'Ajouter professeur';
+
+  @override
+  String get archiveTeacher => 'Archiver professeur';
+
+  @override
+  String get noTeachers => 'Aucun professeur trouvé.';
+
+  @override
+  String get yearsExperience => 'Années d\'expérience';
+
+  @override
+  String get activate => 'Activer';
+
+  @override
+  String get deactivate => 'Désactiver';
+
+  @override
+  String get offlineMode => 'Mode hors ligne — données locales uniquement';
+
+  @override
+  String get verifyEmail => 'Vérifier mon email';
+
+  @override
+  String get emailSentTo => 'Un email a été envoyé à';
+
+  @override
+  String get confirmEmailSteps =>
+      'Ouvrez votre boîte mail et cliquez sur le lien de confirmation';
+
+  @override
+  String get iConfirmedEmail => 'J\'ai confirmé mon email ✅';
+
+  @override
+  String get resendEmail => 'Renvoyer l\'email';
+
+  @override
+  String get emailResent => 'Email renvoyé ✅';
+
+  @override
+  String get modifyInfo => '← Modifier mes informations';
+
+  @override
+  String get confirmEmailTitle => 'Confirmez votre email';
+
+  @override
+  String get roleTeacher => 'Professeur';
+
+  @override
+  String get roleAdmin => 'Administrateur';
+
+  @override
+  String get roleSuperAdmin => 'Super Admin';
 }

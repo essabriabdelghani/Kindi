@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/db_service.dart';
 
 class NouvelleObservationChecklistPage extends StatefulWidget {
@@ -21,8 +22,7 @@ class NouvelleObservationChecklistPage extends StatefulWidget {
 class _NouvelleObservationChecklistPageState
     extends State<NouvelleObservationChecklistPage> {
   late Future<List<Map<String, dynamic>>> futureQuestions;
-
-  final Map<int, int> answers = {}; // questionId -> 0/1/2
+  final Map<int, int> answers = {};
   final TextEditingController contextCtrl = TextEditingController();
   final TextEditingController notesCtrl = TextEditingController();
 
@@ -39,16 +39,19 @@ class _NouvelleObservationChecklistPageState
     super.dispose();
   }
 
-  Future<void> _save(List<Map<String, dynamic>> questions) async {
-    // vérifier toutes réponses
+  // ✅ _save reçoit context comme paramètre → AppLocalizations disponible
+  Future<void> _save(
+    BuildContext context,
+    List<Map<String, dynamic>> questions,
+  ) async {
+    final t = AppLocalizations.of(context)!;
+
     for (final q in questions) {
-      final id = q["id"] as int;
+      final id = q['id'] as int;
       if (!answers.containsKey(id)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Veuillez répondre à toutes les questions."),
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(t.answerAllQuestions)));
         return;
       }
     }
@@ -65,17 +68,20 @@ class _NouvelleObservationChecklistPageState
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text("Observation enregistrée ✅")));
+    ).showSnackBar(SnackBar(content: Text(t.observationSaved)));
     Navigator.pop(context, true);
   }
 
   @override
   Widget build(BuildContext context) {
+    // ✅ t déclaré ici — dans build() → toujours valide
+    final t = AppLocalizations.of(context)!;
+
     return Scaffold(
       backgroundColor: const Color(0xFFFCEFE3),
       appBar: AppBar(
         backgroundColor: Colors.orange,
-        title: const Text("Nouvelle observation"),
+        title: Text(t.newObservation),
       ),
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: futureQuestions,
@@ -88,9 +94,7 @@ class _NouvelleObservationChecklistPageState
 
           final questions = snap.data ?? [];
           if (questions.isEmpty) {
-            return const Center(
-              child: Text("Aucune question checklist trouvée."),
-            );
+            return Center(child: Text(t.noData));
           }
 
           return Column(
@@ -101,9 +105,9 @@ class _NouvelleObservationChecklistPageState
                   children: [
                     TextField(
                       controller: contextCtrl,
-                      decoration: const InputDecoration(
-                        labelText: "Contexte (optionnel)",
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: t.contextOptional,
+                        border: const OutlineInputBorder(),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -111,17 +115,17 @@ class _NouvelleObservationChecklistPageState
                       controller: notesCtrl,
                       minLines: 2,
                       maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: "Notes (optionnel)",
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: t.notesOptional,
+                        border: const OutlineInputBorder(),
                       ),
                     ),
                     const SizedBox(height: 16),
 
                     ...questions.map((q) {
-                      final id = q["id"] as int;
-                      final order = q["order_index"]?.toString() ?? "";
-                      final textFr = q["text_fr"]?.toString() ?? "";
+                      final id = q['id'] as int;
+                      final order = q['order_index']?.toString() ?? '';
+                      final textFr = q['text_fr']?.toString() ?? '';
                       final selected = answers[id];
 
                       return Container(
@@ -135,7 +139,7 @@ class _NouvelleObservationChecklistPageState
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              "Item $order",
+                              'Item $order',
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
@@ -143,14 +147,13 @@ class _NouvelleObservationChecklistPageState
                             const SizedBox(height: 6),
                             Text(textFr),
                             const SizedBox(height: 12),
-
                             Row(
                               children: [
-                                _choice(id, 0, "0\nJamais", selected),
+                                _choice(id, 0, '0\n${t.never}', selected),
                                 const SizedBox(width: 8),
-                                _choice(id, 1, "1\nParfois", selected),
+                                _choice(id, 1, '1\n${t.sometimes}', selected),
                                 const SizedBox(width: 8),
-                                _choice(id, 2, "2\nSouvent", selected),
+                                _choice(id, 2, '2\n${t.often}', selected),
                               ],
                             ),
                           ],
@@ -170,8 +173,9 @@ class _NouvelleObservationChecklistPageState
                       backgroundColor: Colors.orange,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    onPressed: () => _save(questions),
-                    child: const Text("Enregistrer"),
+                    // ✅ passer context explicitement à _save
+                    onPressed: () => _save(context, questions),
+                    child: Text(t.save),
                   ),
                 ),
               ),
@@ -184,7 +188,6 @@ class _NouvelleObservationChecklistPageState
 
   Widget _choice(int qId, int value, String label, int? selected) {
     final isSelected = selected == value;
-
     return Expanded(
       child: InkWell(
         onTap: () => setState(() => answers[qId] = value),

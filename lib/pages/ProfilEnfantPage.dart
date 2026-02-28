@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/db_service.dart';
 import 'ChecklistObservationPage.dart';
 
@@ -35,10 +36,11 @@ class _ProfilEnfantPageState extends State<ProfilEnfantPage> {
   }
 
   String riskLabel(String? risk) {
-    if (risk == null || risk.isEmpty) return "Non défini";
-    if (risk == "green") return "Vert";
-    if (risk == "orange") return "Orange";
-    if (risk == "red") return "Rouge";
+    if (risk == null || risk.isEmpty)
+      return AppLocalizations.of(context)!.riskUndefined;
+    if (risk == "green") return AppLocalizations.of(context)!.riskGreen;
+    if (risk == "orange") return AppLocalizations.of(context)!.riskOrange;
+    if (risk == "red") return AppLocalizations.of(context)!.riskRed;
     return risk;
   }
 
@@ -72,7 +74,7 @@ class _ProfilEnfantPageState extends State<ProfilEnfantPage> {
       backgroundColor: const Color(0xFFFCEFE3),
       appBar: AppBar(
         backgroundColor: Colors.orange,
-        title: const Text("Profil enfant"),
+        title: Text(AppLocalizations.of(context)!.childProfile),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
@@ -116,7 +118,7 @@ class _ProfilEnfantPageState extends State<ProfilEnfantPage> {
                       const SizedBox(height: 10),
                       Row(
                         children: [
-                          const Text("Dernier niveau : "),
+                          Text(AppLocalizations.of(context)!.lastRisk + " : "),
                           const SizedBox(width: 8),
                           StatusChip(
                             label: riskLabel(risk),
@@ -137,7 +139,7 @@ class _ProfilEnfantPageState extends State<ProfilEnfantPage> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.add),
-                label: const Text("Ajouter une observation"),
+                label: Text(AppLocalizations.of(context)!.addObservation),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange,
                   padding: const EdgeInsets.symmetric(vertical: 14),
@@ -177,7 +179,9 @@ class _ProfilEnfantPageState extends State<ProfilEnfantPage> {
 
                   final obs = snap.data ?? [];
                   if (obs.isEmpty) {
-                    return const Center(child: Text("Aucune observation."));
+                    return Center(
+                      child: Text(AppLocalizations.of(context)!.noObservations),
+                    );
                   }
 
                   return ListView.builder(

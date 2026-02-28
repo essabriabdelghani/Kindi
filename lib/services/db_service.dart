@@ -14,7 +14,56 @@ class DBService {
 
   static Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'kindi.db');
-    return await openDatabase(path, version: 1, onCreate: _onCreate);
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
+  }
+
+  static Future<void> _onUpgrade(Database db, int oldV, int newV) async {
+    if (oldV < 2) {
+      // ✅ Recréer la table teachers sans contrainte CHECK stricte sur role
+      // SQLite ne supporte pas ALTER COLUMN → on renomme, recrée, copie
+      try {
+        await db.execute('ALTER TABLE teachers RENAME TO teachers_old');
+        await db.execute('''
+          CREATE TABLE teachers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            first_name TEXT NOT NULL,
+            last_name TEXT,
+            email TEXT UNIQUE NOT NULL,
+            phone_number TEXT,
+            school_name TEXT NOT NULL,
+            school_city TEXT NOT NULL,
+            school_region TEXT,
+            role TEXT NOT NULL DEFAULT 'teacher',
+            preferred_language TEXT,
+            years_of_experience INTEGER,
+            grade_level TEXT,
+            password_hash TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            synced INTEGER DEFAULT 1,
+            deleted INTEGER DEFAULT 0,
+            created_at TEXT,
+            updated_at TEXT
+          )
+        ''');
+        await db.execute('''
+          INSERT INTO teachers SELECT
+            id, first_name, last_name, email, phone_number,
+            school_name, school_city, school_region, role,
+            preferred_language, years_of_experience, grade_level,
+            password_hash, is_active, synced, deleted, created_at, updated_at
+          FROM teachers_old
+        ''');
+        await db.execute('DROP TABLE teachers_old');
+        print('✅ Migration v2 : contrainte role supprimée');
+      } catch (e) {
+        print('⚠️ Migration v2 error: \$e');
+      }
+    }
   }
 
   static Future<void> _onCreate(Database db, int version) async {
@@ -29,7 +78,7 @@ class DBService {
         school_name TEXT NOT NULL,
         school_city TEXT NOT NULL,
         school_region TEXT,
-        role TEXT NOT NULL CHECK(role IN ('teacher','admin','researcher')),
+        role TEXT NOT NULL CHECK(role IN ('teacher','admin','super_admin','researcher')),
         preferred_language TEXT CHECK(preferred_language IN ('ar','fr','en')),
         years_of_experience INTEGER,
         grade_level TEXT,
@@ -798,6 +847,87 @@ class DBService {
     );
   }
 
+  // ===== DASHBOARD : stats par classe pour un prof =====
+  static Future<List<Map<String, dynamic>>> getDashboardStats(
+    int teacherId,
+  ) async {
+    final db = await database;
+
+    // 1. Toutes les classes du prof
+    final classes = await db.rawQuery(
+      '''
+      SELECT c.id, c.name, c.level, c.academic_year
+      FROM classes c
+      INNER JOIN class_teachers ct ON ct.class_id = c.id
+      WHERE ct.teacher_id = ? AND c.deleted = 0
+      ORDER BY c.name ASC
+    ''',
+      [teacherId],
+    );
+
+    final List<Map<String, dynamic>> result = [];
+
+    for (final cls in classes) {
+      final classId = cls['id'] as int;
+
+      // 2. Nombre total d'élèves actifs dans cette classe
+      final countRes = await db.rawQuery(
+        '''
+        SELECT COUNT(*) AS total FROM children
+        WHERE class_id = ? AND deleted = 0
+      ''',
+        [classId],
+      );
+      final total = (countRes.first['total'] as int?) ?? 0;
+
+      // 3. Stats risque pour cette classe
+      final riskRes = await db.rawQuery(
+        '''
+        SELECT latest_overall_risk_level AS risk, COUNT(*) AS cnt
+        FROM children
+        WHERE class_id = ? AND deleted = 0
+        GROUP BY latest_overall_risk_level
+      ''',
+        [classId],
+      );
+
+      int green = 0, orange = 0, red = 0;
+      for (final r in riskRes) {
+        final risk = r['risk'] as String?;
+        final cnt = (r['cnt'] as int?) ?? 0;
+        if (risk == 'green') green = cnt;
+        if (risk == 'orange') orange = cnt;
+        if (risk == 'red') red = cnt;
+      }
+
+      // 4. Liste des élèves récents (3 derniers ajoutés)
+      final recentStudents = await db.rawQuery(
+        '''
+        SELECT first_name, last_name, latest_overall_risk_level, gender
+        FROM children
+        WHERE class_id = ? AND deleted = 0
+        ORDER BY created_at DESC
+        LIMIT 3
+      ''',
+        [classId],
+      );
+
+      result.add({
+        'id': classId,
+        'name': cls['name'],
+        'level': cls['level'] ?? '',
+        'academic_year': cls['academic_year'] ?? '',
+        'total': total,
+        'green': green,
+        'orange': orange,
+        'red': red,
+        'recent': recentStudents,
+      });
+    }
+
+    return result;
+  }
+
   static Future<Map<String, int>> getRiskStatsByTeacher(int teacherId) async {
     final db = await database;
 
@@ -847,17 +977,16 @@ class DBService {
     required String schoolCity,
   }) async {
     final db = await database;
-
+    // ✅ Afficher TOUS les utilisateurs de l'école (teachers + admins)
     return await db.query(
-      "teachers",
-      where: """
+      'teachers',
+      where: '''
       deleted = 0
       AND school_name = ?
       AND school_city = ?
-      AND role = 'teacher'
-    """,
+    ''',
       whereArgs: [schoolName, schoolCity],
-      orderBy: "first_name ASC",
+      orderBy: 'role ASC, first_name ASC',
     );
   }
 
@@ -871,6 +1000,19 @@ class DBService {
       "teachers",
       {...data, "updated_at": DateTime.now().toIso8601String()},
       where: "id = ?",
+      whereArgs: [teacherId],
+    );
+  }
+
+  static Future<void> setTeacherRole({
+    required int teacherId,
+    required String role,
+  }) async {
+    final db = await database;
+    await db.update(
+      'teachers',
+      {'role': role, 'updated_at': DateTime.now().toIso8601String()},
+      where: 'id = ?',
       whereArgs: [teacherId],
     );
   }
@@ -894,13 +1036,45 @@ class DBService {
 
   static Future<void> archiveTeacher(int teacherId) async {
     final db = await database;
-
     await db.update(
       "teachers",
       {"deleted": 1, "updated_at": DateTime.now().toIso8601String()},
       where: "id = ?",
       whereArgs: [teacherId],
     );
+  }
+
+  // ===== DELETE TEACHER (suppression définitive) =====
+  static Future<void> deleteTeacher(int teacherId) async {
+    final db = await database;
+    // Supprimer les liens class_teachers
+    await db.delete(
+      "class_teachers",
+      where: "teacher_id = ?",
+      whereArgs: [teacherId],
+    );
+    // Supprimer le professeur
+    await db.delete("teachers", where: "id = ?", whereArgs: [teacherId]);
+  }
+
+  // ===== STATS PROFESSEUR (classes + élèves) =====
+  static Future<Map<String, dynamic>> getTeacherStats(int teacherId) async {
+    final db = await database;
+    final classRes = await db.rawQuery(
+      'SELECT COUNT(*) AS cnt FROM classes c '
+      'INNER JOIN class_teachers ct ON ct.class_id = c.id '
+      'WHERE ct.teacher_id = ? AND c.deleted = 0',
+      [teacherId],
+    );
+    final studentRes = await db.rawQuery(
+      'SELECT COUNT(*) AS cnt FROM children '
+      'WHERE main_teacher_id = ? AND deleted = 0',
+      [teacherId],
+    );
+    return {
+      'classes': (classRes.first['cnt'] as int?) ?? 0,
+      'students': (studentRes.first['cnt'] as int?) ?? 0,
+    };
   }
 
   static Future<List<Map<String, dynamic>>> getClassesByTeacherInSchool({

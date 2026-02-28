@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sqflite/sqflite.dart'; // ✅ Fix : ConflictAlgorithm
 import '../models/teachers.dart';
@@ -63,14 +64,14 @@ class _MesClassesPageState extends State<MesClassesPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
-          title: const Text("Ajouter une classe"),
+          title: Text(AppLocalizations.of(context)!.addClass),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: classCtrl,
-                decoration: const InputDecoration(
-                  labelText: "Nom de la classe *",
+                decoration: InputDecoration(
+                  labelText: AppLocalizations.of(context)!.className,
                   border: OutlineInputBorder(),
                 ),
                 onChanged: (_) => setD(() {}),
@@ -78,8 +79,8 @@ class _MesClassesPageState extends State<MesClassesPage> {
               const SizedBox(height: 10),
               TextField(
                 controller: levelCtrl,
-                decoration: const InputDecoration(
-                  labelText: "Niveau (PS, MS, GS...)",
+                decoration: InputDecoration(
+                  labelText: AppLocalizations.of(context)!.level,
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -104,7 +105,7 @@ class _MesClassesPageState extends State<MesClassesPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text("Annuler"),
+              child: Text(AppLocalizations.of(context)!.cancel),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
@@ -143,15 +144,15 @@ class _MesClassesPageState extends State<MesClassesPage> {
 
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Classe ajoutée ✅"),
+                    SnackBar(
+                      content: Text(AppLocalizations.of(context)!.classAdded),
                       backgroundColor: Colors.green,
                     ),
                   );
                 }
               },
-              child: const Text(
-                "Ajouter",
+              child: Text(
+                AppLocalizations.of(context)!.addClass,
                 style: TextStyle(color: Colors.white),
               ),
             ),
@@ -165,8 +166,10 @@ class _MesClassesPageState extends State<MesClassesPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Supprimer la classe"),
-        content: Text("Supprimer '$name' ?"),
+        title: Text(AppLocalizations.of(context)!.deleteClass),
+        content: Text(
+          "${AppLocalizations.of(context)!.deleteClassConfirm} '$name'",
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -248,15 +251,15 @@ class _MesClassesPageState extends State<MesClassesPage> {
             padding: const EdgeInsets.all(20),
             child: _syncing
                 // ✅ Indicateur pendant la sync descendante
-                ? const Center(
+                ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         CircularProgressIndicator(color: Colors.orange),
                         SizedBox(height: 15),
                         Text(
-                          "Synchronisation...",
-                          style: TextStyle(color: Colors.black54),
+                          AppLocalizations.of(context)!.synchronizing,
+                          style: const TextStyle(color: Colors.black54),
                         ),
                       ],
                     ),
@@ -278,7 +281,7 @@ class _MesClassesPageState extends State<MesClassesPage> {
                       }
                       final classes = snapshot.data ?? [];
                       if (classes.isEmpty) {
-                        return const Center(
+                        return Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -289,16 +292,16 @@ class _MesClassesPageState extends State<MesClassesPage> {
                               ),
                               SizedBox(height: 15),
                               Text(
-                                "Aucune classe trouvée.",
-                                style: TextStyle(
+                                AppLocalizations.of(context)!.noClasses,
+                                style: const TextStyle(
                                   fontSize: 16,
                                   color: Colors.black54,
                                 ),
                               ),
                               SizedBox(height: 8),
                               Text(
-                                "Appuyez sur + pour en ajouter une.",
-                                style: TextStyle(
+                                AppLocalizations.of(context)!.noClassesHint,
+                                style: const TextStyle(
                                   fontSize: 13,
                                   color: Colors.black38,
                                 ),
@@ -375,7 +378,7 @@ class _ClassCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(15),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
               color: Colors.black12,
               blurRadius: 10,
@@ -408,13 +411,13 @@ class _ClassCard extends StatelessWidget {
                   ),
                   if (niveau.isNotEmpty)
                     Text(
-                      "Niveau : $niveau",
-                      style: const TextStyle(color: Colors.black54),
+                      "${AppLocalizations.of(context)!.level}: $niveau",
+                      style: TextStyle(color: Colors.black54),
                     ),
                   if (annee.isNotEmpty)
                     Text(
-                      "Année : $annee",
-                      style: const TextStyle(color: Colors.black54),
+                      "${AppLocalizations.of(context)!.academicYear}: $annee",
+                      style: TextStyle(color: Colors.black54),
                     ),
                 ],
               ),

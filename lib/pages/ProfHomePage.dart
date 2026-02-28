@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../models/teachers.dart';
+import '../l10n/app_localizations.dart';
 import '../services/db_service.dart';
 import 'MesEtudiantsPage.dart';
 import 'package:pie_chart/pie_chart.dart';
+export 'DashboardPage.dart';
 
 class ProfHomePage extends StatefulWidget {
   final Teacher user;
@@ -47,7 +49,7 @@ class _ProfHomePageState extends State<ProfHomePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "Bienvenue 👋 ${widget.user.firstName}",
+                  "${AppLocalizations.of(context)!.welcome} 👋 \${widget.user.firstName}",
                   style: const TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
@@ -61,11 +63,7 @@ class _ProfHomePageState extends State<ProfHomePage> {
                         dataMap: stats.map(
                           (key, value) => MapEntry(key, value.toDouble()),
                         ),
-                        colorList: const [
-                          Colors.green,
-                          Colors.orange,
-                          Colors.red,
-                        ],
+                        colorList: [Colors.green, Colors.orange, Colors.red],
                         chartType: ChartType.ring,
                         chartRadius: 150,
                         legendOptions: const LegendOptions(
@@ -80,7 +78,7 @@ class _ProfHomePageState extends State<ProfHomePage> {
                 const SizedBox(height: 25),
                 actionButton(
                   icon: Icons.group,
-                  label: "Mes étudiants",
+                  label: AppLocalizations.of(context)!.myStudents,
                   color: Colors.deepOrange,
                   onTap: () {
                     Navigator.push(

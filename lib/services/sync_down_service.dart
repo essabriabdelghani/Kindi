@@ -56,6 +56,9 @@ class SyncDownService {
     final db = await DBService.database;
 
     try {
+      // 0️⃣ Sync rôle du teacher depuis Firestore (admin peut l'avoir changé)
+      await _syncTeacherRoleDown(db: db, teacherId: teacherId);
+
       // 1️⃣ Sync classes descendante
       await _syncClassesDown(
         db: db,
@@ -76,6 +79,57 @@ class SyncDownService {
       '✅ SyncDown: ${report.inserted} insérés, ${report.updated} mis à jour, ${report.archived} archivés',
     );
     return report;
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // SYNC RÔLE TEACHER : Firestore → SQLite
+  // Si un admin a changé le rôle depuis une autre session,
+  // on met à jour SQLite et la session locale
+  // ═══════════════════════════════════════════════════════
+  static Future<void> _syncTeacherRoleDown({
+    required Database db,
+    required int teacherId,
+  }) async {
+    try {
+      final doc = await _firestore
+          .collection('teachers')
+          .doc('teacher_' + teacherId.toString())
+          .get();
+
+      if (!doc.exists) return;
+      final data = doc.data();
+      if (data == null) return;
+
+      final remoteRole = data['role'] as String?;
+      if (remoteRole == null) return;
+
+      // Comparer avec SQLite local
+      final local = await db.query(
+        'teachers',
+        where: 'id = ?',
+        whereArgs: [teacherId],
+        limit: 1,
+      );
+      if (local.isEmpty) return;
+
+      final localRole = local.first['role'] as String?;
+      if (localRole == remoteRole) return; // pas de changement
+
+      // Mettre à jour SQLite
+      await db.rawUpdate(
+        'UPDATE teachers SET role = ?, synced = 1 WHERE id = ?',
+        [remoteRole, teacherId],
+      );
+
+      // Mettre à jour la session en mémoire (import session_service)
+      // Session mise à jour via SessionService
+      // (import géré dynamiquement pour éviter circular dependency)
+      print('ℹ️ Role updated in SQLite - session will reload on next build');
+
+      print('✅ Rôle mis à jour depuis Firestore: ' + remoteRole);
+    } catch (e) {
+      print('ℹ️ _syncTeacherRoleDown: ' + e.toString());
+    }
   }
 
   // ═══════════════════════════════════════════════════════

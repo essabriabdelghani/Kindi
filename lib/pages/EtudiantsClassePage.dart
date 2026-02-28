@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/db_service.dart';
 import '../services/sync_engine.dart';
 import '../services/sync_down_service.dart';
@@ -21,10 +22,9 @@ class EtudiantsClassePage extends StatefulWidget {
 }
 
 class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
-  // ✅ Fix 2 : initialiser avec une Future vide au lieu de late
   Future<List<Map<String, dynamic>>> futureStudents = Future.value([]);
   bool showArchived = false;
-  bool _syncing = true; // true dès le début
+  bool _syncing = true;
 
   @override
   void initState() {
@@ -34,15 +34,11 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
 
   Future<void> _syncThenLoad() async {
     if (mounted) setState(() => _syncing = true);
-
-    // ✅ Assigner futureStudents immédiatement (liste vide pendant sync)
-    if (mounted) {
+    if (mounted)
       setState(() {
         futureStudents = Future.value([]);
       });
-    }
 
-    // Sync descendante Firebase → SQLite
     final report = await SyncDownService.syncForClass(
       teacherId: widget.mainTeacherId,
       classId: widget.classId,
@@ -58,7 +54,6 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
       );
     }
 
-    // Maintenant charger depuis SQLite (à jour)
     if (mounted) {
       setState(() {
         _syncing = false;
@@ -105,6 +100,9 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
   }
 
   Future<void> _showAddStudentDialog() async {
+    // ✅ Capturer t AVANT d'ouvrir le dialog — context est valide ici
+    final t = AppLocalizations.of(context)!;
+
     final firstNameCtrl = TextEditingController();
     final lastNameCtrl = TextEditingController();
     final birthDateCtrl = TextEditingController();
@@ -114,7 +112,7 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Ajouter un élève"),
+        title: Text(t.addStudent),
         content: StatefulBuilder(
           builder: (ctx, setD) => SingleChildScrollView(
             child: Column(
@@ -122,27 +120,27 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
               children: [
                 TextField(
                   controller: firstNameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: "Prénom *",
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: t.firstName,
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: lastNameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: "Nom",
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: t.lastName,
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: birthDateCtrl,
                   readOnly: true,
-                  decoration: const InputDecoration(
-                    labelText: "Date de naissance *",
-                    border: OutlineInputBorder(),
-                    suffixIcon: Icon(Icons.calendar_today),
+                  decoration: InputDecoration(
+                    labelText: t.dateOfBirth,
+                    border: const OutlineInputBorder(),
+                    suffixIcon: const Icon(Icons.calendar_today),
                   ),
                   onTap: () async {
                     final picked = await showDatePicker(
@@ -161,13 +159,13 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: gender,
-                  decoration: const InputDecoration(
-                    labelText: "Genre",
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: t.gender,
+                    border: const OutlineInputBorder(),
                   ),
-                  items: const [
-                    DropdownMenuItem(value: 'boy', child: Text("Garçon")),
-                    DropdownMenuItem(value: 'girl', child: Text("Fille")),
+                  items: [
+                    DropdownMenuItem(value: 'boy', child: Text(t.boy)),
+                    DropdownMenuItem(value: 'girl', child: Text(t.girl)),
                   ],
                   onChanged: (v) {
                     if (v != null) setD(() => gender = v);
@@ -176,15 +174,24 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String?>(
                   value: riskLevel,
-                  decoration: const InputDecoration(
-                    labelText: "Niveau de risque",
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: t.riskLevel,
+                    border: const OutlineInputBorder(),
                   ),
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text("Non défini")),
-                    DropdownMenuItem(value: 'green', child: Text("🟢 Faible")),
-                    DropdownMenuItem(value: 'orange', child: Text("🟠 Modéré")),
-                    DropdownMenuItem(value: 'red', child: Text("🔴 Élevé")),
+                  items: [
+                    DropdownMenuItem(value: null, child: Text(t.riskUndefined)),
+                    DropdownMenuItem(
+                      value: 'green',
+                      child: const Text("🟢 Faible"),
+                    ),
+                    DropdownMenuItem(
+                      value: 'orange',
+                      child: const Text("🟠 Modéré"),
+                    ),
+                    DropdownMenuItem(
+                      value: 'red',
+                      child: const Text("🔴 Élevé"),
+                    ),
                   ],
                   onChanged: (v) => setD(() => riskLevel = v),
                 ),
@@ -195,7 +202,7 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("Annuler"),
+            child: Text(t.cancel),
           ),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
@@ -205,16 +212,14 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
 
               if (firstName.isEmpty) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text("Prénom obligatoire ❌")),
+                  SnackBar(content: Text("${t.firstName} obligatoire ❌")),
                 );
                 return;
               }
               if (birthDate.isEmpty) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(
-                    content: Text("Date de naissance obligatoire ❌"),
-                  ),
-                );
+                ScaffoldMessenger.of(
+                  ctx,
+                ).showSnackBar(SnackBar(content: Text(t.dateOfBirthRequired)));
                 return;
               }
 
@@ -228,14 +233,12 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                   mainTeacherId: widget.mainTeacherId,
                   riskLevel: riskLevel,
                 );
-
                 SyncEngine.syncAll(teacherId: widget.mainTeacherId);
-
                 if (ctx.mounted) {
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Élève ajouté ✅"),
+                    SnackBar(
+                      content: Text("${t.students} ✅"),
                       backgroundColor: Colors.green,
                     ),
                   );
@@ -245,12 +248,15 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                 if (ctx.mounted) {
                   ScaffoldMessenger.of(
                     ctx,
-                  ).showSnackBar(SnackBar(content: Text("Erreur : $e")));
+                  ).showSnackBar(SnackBar(content: Text("${t.error} : $e")));
                 }
               }
             },
             icon: const Icon(Icons.check, color: Colors.white),
-            label: const Text("Ajouter", style: TextStyle(color: Colors.white)),
+            label: Text(
+              t.addStudent,
+              style: const TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -259,11 +265,14 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ t dans build() — toujours safe
+    final t = AppLocalizations.of(context)!;
+
     return Scaffold(
       backgroundColor: const Color(0xFFFCEFE3),
       appBar: AppBar(
         backgroundColor: Colors.orange,
-        title: Text("Étudiants — ${widget.className}"),
+        title: Text("${t.students} — ${widget.className}"),
         actions: [
           if (_syncing)
             const Padding(
@@ -280,7 +289,7 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
           else
             IconButton(
               icon: const Icon(Icons.sync),
-              tooltip: "Synchroniser depuis le cloud",
+              tooltip: t.synchronizing,
               onPressed: _syncThenLoad,
             ),
           IconButton(
@@ -298,15 +307,15 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
         child: const Icon(Icons.add, color: Colors.white),
       ),
       body: _syncing
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(color: Colors.orange),
-                  SizedBox(height: 15),
+                  const CircularProgressIndicator(color: Colors.orange),
+                  const SizedBox(height: 15),
                   Text(
-                    "Synchronisation...",
-                    style: TextStyle(color: Colors.black54),
+                    t.synchronizing,
+                    style: const TextStyle(color: Colors.black54),
                   ),
                 ],
               ),
@@ -320,7 +329,7 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                   );
                 }
                 if (snapshot.hasError) {
-                  return Center(child: Text("Erreur : ${snapshot.error}"));
+                  return Center(child: Text("${t.error} : ${snapshot.error}"));
                 }
 
                 final students = snapshot.data ?? [];
@@ -337,9 +346,7 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                         ),
                         const SizedBox(height: 15),
                         Text(
-                          showArchived
-                              ? "Aucun élève archivé."
-                              : "Aucun élève trouvé.",
+                          showArchived ? t.noArchivedStudents : t.noStudents,
                           style: const TextStyle(
                             fontSize: 16,
                             color: Colors.black54,
@@ -347,9 +354,9 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                         ),
                         if (!showArchived) ...[
                           const SizedBox(height: 8),
-                          const Text(
-                            "Appuyez sur + pour en ajouter un.",
-                            style: TextStyle(
+                          Text(
+                            t.noStudentsHint,
+                            style: const TextStyle(
                               fontSize: 13,
                               color: Colors.black38,
                             ),
@@ -419,7 +426,7 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      fullName.isEmpty ? 'Étudiant' : fullName,
+                                      fullName.isEmpty ? t.students : fullName,
                                       style: const TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
@@ -438,7 +445,7 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                                         ),
                                         const SizedBox(width: 6),
                                         Text(
-                                          "Risque : ${_riskLabel(risk)}",
+                                          "${t.riskLevel} : ${_riskLabel(risk)}",
                                           style: const TextStyle(
                                             color: Colors.black54,
                                             fontSize: 12,
@@ -468,17 +475,15 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                                     final confirmed = await showDialog<bool>(
                                       context: context,
                                       builder: (ctx) => AlertDialog(
-                                        title: const Text(
-                                          "Confirmer la suppression",
-                                        ),
+                                        title: Text(t.confirmDelete),
                                         content: Text(
-                                          "Supprimer $fullName définitivement ?",
+                                          "${t.delete} $fullName ?",
                                         ),
                                         actions: [
                                           TextButton(
                                             onPressed: () =>
                                                 Navigator.pop(ctx, false),
-                                            child: const Text("Annuler"),
+                                            child: Text(t.cancel),
                                           ),
                                           ElevatedButton(
                                             style: ElevatedButton.styleFrom(
@@ -486,14 +491,13 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                                             ),
                                             onPressed: () =>
                                                 Navigator.pop(ctx, true),
-                                            child: const Text("Supprimer"),
+                                            child: Text(t.delete),
                                           ),
                                         ],
                                       ),
                                     );
                                     if (confirmed == true) {
                                       await DBService.deleteStudent(s['id']);
-                                      // ✅ Sync → supprime aussi dans Firestore
                                       SyncEngine.syncAll(
                                         teacherId: widget.mainTeacherId,
                                       );
@@ -502,24 +506,24 @@ class _EtudiantsClassePageState extends State<EtudiantsClassePage> {
                                   }
                                 },
                                 itemBuilder: (_) => showArchived
-                                    ? const [
+                                    ? [
                                         PopupMenuItem(
                                           value: 'unarchive',
-                                          child: Text("Désarchiver"),
+                                          child: Text(t.unarchive),
                                         ),
                                         PopupMenuItem(
                                           value: 'delete',
-                                          child: Text("Supprimer"),
+                                          child: Text(t.delete),
                                         ),
                                       ]
-                                    : const [
+                                    : [
                                         PopupMenuItem(
                                           value: 'archive',
-                                          child: Text("Archiver"),
+                                          child: Text(t.archive),
                                         ),
                                         PopupMenuItem(
                                           value: 'delete',
-                                          child: Text("Supprimer"),
+                                          child: Text(t.delete),
                                         ),
                                       ],
                               ),

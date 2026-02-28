@@ -86,4 +86,27 @@ class Teacher {
       updatedAt: map['updated_at'],
     );
   }
+
+  Teacher copyWith({String? role}) {
+    return Teacher(
+      id: id,
+      firstName: firstName,
+      lastName: lastName,
+      email: email,
+      phoneNumber: phoneNumber,
+      schoolName: schoolName,
+      schoolCity: schoolCity,
+      schoolRegion: schoolRegion,
+      role: role ?? this.role,
+      preferredLanguage: preferredLanguage,
+      yearsOfExperience: yearsOfExperience,
+      gradeLevel: gradeLevel,
+      passwordHash: passwordHash,
+      isActive: isActive,
+      synced: synced,
+      deleted: deleted,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+    );
+  }
 }

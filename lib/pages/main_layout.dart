@@ -1,13 +1,18 @@
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:kindi/pages/MesClassesPage.dart';
-import 'package:kindi/pages/ProfHomePage.dart';
+import 'package:kindi/pages/DashboardPage.dart';
 import 'package:kindi/pages/AdminPage.dart';
 import 'package:kindi/pages/connexion_page.dart';
 import 'package:kindi/widgets/app_drawer.dart';
 import 'package:kindi/widgets/sync_status_widget.dart';
 import '../models/teachers.dart';
+import '../services/db_service.dart';
+import '../services/session_service.dart';
 import '../controllers/auth_controller.dart';
 import '../widgets/language_selector.dart';
+import '../l10n/app_localizations.dart';
 
 class MainLayout extends StatefulWidget {
   final Teacher user;
@@ -19,41 +24,104 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> {
   int selectedIndex = 0;
+  Teacher? _currentUser; // user local mutable
+  StreamSubscription? _roleSub; // listener Firestore sur le rôle
 
-  bool get isAdmin =>
-      widget.user.role == 'admin' || widget.user.role == 'super_admin';
+  @override
+  void initState() {
+    super.initState();
+    _currentUser = widget.user;
+    _listenRoleChanges();
+  }
+
+  @override
+  void dispose() {
+    _roleSub?.cancel();
+    super.dispose();
+  }
+
+  // ── Listener temps réel sur le document Firestore du user ──
+  void _listenRoleChanges() {
+    final userId = widget.user.id;
+    if (userId == null) return;
+
+    _roleSub = FirebaseFirestore.instance
+        .collection('teachers')
+        .doc('teacher_$userId')
+        .snapshots()
+        .listen(
+          (doc) async {
+            if (!doc.exists || !mounted) return;
+
+            final data = doc.data();
+            final remoteRole = data?['role'] as String?;
+            if (remoteRole == null) return;
+
+            final currentRole = _currentUser?.role ?? widget.user.role;
+            if (remoteRole == currentRole) return; // pas de changement
+
+            // ── Mettre à jour SQLite ──
+            final db = await DBService.database;
+            await db.rawUpdate(
+              'UPDATE teachers SET role = ?, synced = 1 WHERE id = ?',
+              [remoteRole, userId],
+            );
+
+            // ── Mettre à jour la session en mémoire ──
+            final updated = (_currentUser ?? widget.user).copyWith(
+              role: remoteRole,
+            );
+            SessionService.currentUser = updated;
+
+            // ── Rebuild l'interface ──
+            if (mounted) {
+              setState(() {
+                _currentUser = updated;
+                // Si on était sur admin (index 2) et on n'est plus admin → revenir à 0
+                if (!_isAdminRole(remoteRole) && selectedIndex >= 2) {
+                  selectedIndex = 0;
+                }
+              });
+
+              // Notifier l'utilisateur
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Votre rôle a été mis à jour : $remoteRole'),
+                  backgroundColor: Colors.purple,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+            }
+          },
+          onError: (e) {
+            // Firestore offline → silencieux
+            debugPrint('ℹ️ Role listener offline: $e');
+          },
+        );
+  }
+
+  bool _isAdminRole(String role) => role == 'admin' || role == 'super_admin';
+
+  Teacher get user => _currentUser ?? widget.user;
+
+  bool get isAdmin => _isAdminRole(user.role);
 
   List<Widget> get pages {
     final list = <Widget>[
-      ProfHomePage(user: widget.user), // 0 — Accueil
-      MesClassesPage(user: widget.user), // 1 — Mes classes
+      DashboardPage(user: user),
+      MesClassesPage(user: user),
     ];
-    if (isAdmin) {
-      list.add(AdminPage(admin: widget.user)); // 2 — Admin
-    }
+    if (isAdmin) list.add(AdminPage(admin: user));
     return list;
   }
 
-  String get pageTitle {
-    switch (selectedIndex) {
-      case 0:
-        return 'Accueil';
-      case 1:
-        return 'Mes classes';
-      case 2:
-        return isAdmin ? 'Administration' : 'Kindi';
-      default:
-        return 'Kindi';
-    }
-  }
-
   void _onSelectPage(int index) {
-    if (index < 0 || index >= pages.length) index = 0;
-    setState(() => selectedIndex = index);
-    Navigator.pop(context);
+    final maxIndex = pages.length - 1;
+    setState(() => selectedIndex = index.clamp(0, maxIndex));
   }
 
   Future<void> _logout() async {
+    _roleSub?.cancel();
     await AuthController.logout();
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
@@ -63,19 +131,19 @@ class _MainLayoutState extends State<MainLayout> {
     );
   }
 
-  String _roleLabel(String role) {
-    switch (role) {
-      case 'admin':
-        return '🔑 Administrateur';
-      case 'super_admin':
-        return '👑 Super Admin';
-      default:
-        return '👤 Professeur';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+
+    final titles = [t.home, t.myClasses, t.administration];
+    final pageTitle = titles[selectedIndex.clamp(0, titles.length - 1)];
+
+    final roleLabel = user.role == 'super_admin'
+        ? '👑 ${t.roleSuperAdmin}'
+        : user.role == 'admin'
+        ? '🔑 ${t.roleAdmin}'
+        : '👤 ${t.roleTeacher}';
+
     return Scaffold(
       backgroundColor: const Color(0xFFFCEFE3),
       appBar: AppBar(
@@ -99,29 +167,19 @@ class _MainLayoutState extends State<MainLayout> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                _roleLabel(widget.user.role),
+                roleLabel,
                 style: const TextStyle(color: Colors.white70, fontSize: 10),
               ),
             ),
           ],
         ),
         actions: [
-          // ✅ Sélecteur de langue
           const LanguageSelector(),
-          // ✅ Sync status
-          if (widget.user.id != null)
-            SyncStatusWidget(teacherId: widget.user.id!),
+          if (user.id != null) SyncStatusWidget(teacherId: user.id!),
         ],
       ),
-      drawer: AppDrawer(
-        onSelect: _onSelectPage,
-        user: widget.user,
-        onLogout: _logout,
-      ),
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 250),
-        child: pages[selectedIndex],
-      ),
+      drawer: AppDrawer(onSelect: _onSelectPage, user: user, onLogout: _logout),
+      body: IndexedStack(index: selectedIndex, children: pages),
     );
   }
 }

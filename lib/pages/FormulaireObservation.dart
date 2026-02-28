@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'package:intl/intl.dart';
 import '../models/children.dart';
-import '../services/db_service.dart';
-import '../services/sync_engine.dart';
 
 class FormulaireObservationPage extends StatefulWidget {
   final Child child;
-
   const FormulaireObservationPage({super.key, required this.child});
 
   @override
@@ -15,525 +13,322 @@ class FormulaireObservationPage extends StatefulWidget {
 }
 
 class _FormulaireObservationPageState extends State<FormulaireObservationPage> {
-  // ── État ───────────────────────────────────────────────
-  String _context = "Regroupement";
-  final _noteCtrl = TextEditingController();
+  // ✅ Valeurs initiales hardcodées (clés neutres) — traduits dans build()
+  String _contexteKey = 'grouping'; // clé, pas texte traduit
+  String _reponseQ1Key = 'never';
+  String _reponseQ2Key = 'never';
+  String _reponseQ3Key = 'never';
 
-  // questionId → valeur (0=Jamais, 1=Parfois, 2=Souvent)
-  final Map<int, int> _answers = {};
-
-  // Questions chargées depuis SQLite
-  List<Map<String, dynamic>> _questions = [];
-
-  bool _loading = true; // chargement questions
-  bool _submitting = false; // envoi en cours
-
+  final TextEditingController _noteController = TextEditingController();
   late final String _dateObservation;
-
-  // ── domaines lisibles ─────────────────────────────────
-  final Map<String, String> _domainLabels = {
-    'inattention': '🔵 Inattention',
-    'hyperactivity_impulsivity': '🔴 Hyperactivité / Impulsivité',
-    'self_regulation_social': '🟢 Autorégulation sociale',
-  };
 
   @override
   void initState() {
     super.initState();
     _dateObservation = DateFormat('dd/MM/yyyy').format(DateTime.now());
-    _loadQuestions();
   }
 
   @override
   void dispose() {
-    _noteCtrl.dispose();
+    _noteController.dispose();
     super.dispose();
   }
 
-  // ══════════════════════════════════════════════════════
-  // Charger les questions depuis SQLite
-  // ══════════════════════════════════════════════════════
-  Future<void> _loadQuestions() async {
-    setState(() => _loading = true);
-    final qs = await DBService.getChecklistQuestions();
-
-    // Initialiser toutes les réponses à 0 (Jamais)
-    final answers = <int, int>{};
-    for (final q in qs) {
-      answers[q['id'] as int] = 0;
-    }
-
-    setState(() {
-      _questions = qs;
-      _answers.addAll(answers);
-      _loading = false;
-    });
-  }
-
-  // ══════════════════════════════════════════════════════
-  // Soumettre → SQLite (synced=0) → SyncEngine → Firestore
-  // ══════════════════════════════════════════════════════
-  Future<void> _submit() async {
-    if (_answers.isEmpty) return;
-
-    setState(() => _submitting = true);
-
-    try {
-      // ✅ insertObservationChecklist avec synced=0
-      await DBService.insertObservationChecklist(
-        childId: widget.child.id!,
-        teacherId: widget.child.mainTeacherId,
-        classId: widget.child.classId,
-        context: _context,
-        notes: _noteCtrl.text.trim(),
-        answers: _answers,
-      );
-
-      // ✅ Sync montante vers Firestore
-      SyncEngine.syncAll(teacherId: widget.child.mainTeacherId);
-
-      if (!mounted) return;
-      setState(() => _submitting = false);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Observation sauvegardée ✅"),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      Navigator.pop(context);
-    } catch (e) {
-      setState(() => _submitting = false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur : $e"), backgroundColor: Colors.red),
-      );
+  // ✅ Helper — traduit une clé en texte localisé
+  String _tContext(AppLocalizations t, String key) {
+    switch (key) {
+      case 'grouping':
+        return t.grouping;
+      case 'freePlay':
+        return t.freePlay;
+      case 'activity':
+        return t.activity;
+      default:
+        return key;
     }
   }
 
-  // ══════════════════════════════════════════════════════
-  // UI
-  // ══════════════════════════════════════════════════════
+  String _tFreq(AppLocalizations t, String key) {
+    switch (key) {
+      case 'never':
+        return t.never;
+      case 'sometimes':
+        return t.sometimes;
+      case 'often':
+        return t.often;
+      default:
+        return key;
+    }
+  }
+
+  void _submitObservation(AppLocalizations t) {
+    final observationData = {
+      'child_id': widget.child.id,
+      'class_id': widget.child.classId,
+      'teacher_id': widget.child.mainTeacherId,
+      'date': DateTime.now().toIso8601String(),
+      'contexte': _contexteKey,
+      'q1': _reponseQ1Key,
+      'q2': _reponseQ2Key,
+      'q3': _reponseQ3Key,
+      'notes': _noteController.text.trim(),
+    };
+    debugPrint('Observation envoyée: $observationData');
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(t.observationSaved),
+        backgroundColor: Colors.orange,
+      ),
+    );
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
+    // ✅ t disponible ici — tout passe par build()
+    final t = AppLocalizations.of(context)!;
     final child = widget.child;
-    final fullName = "${child.firstName} ${child.lastName ?? ''}".trim();
-    final width = MediaQuery.of(context).size.width;
-    final maxWidth = width > 800 ? 800.0 : width * 0.95;
+    final fullName = '${child.firstName} ${child.lastName ?? ''}'.trim();
+    final double maxWidth = MediaQuery.of(context).size.width > 800
+        ? 800
+        : MediaQuery.of(context).size.width * 0.95;
+
+    // Options contexte
+    final contextOptions = [
+      {'key': 'grouping', 'label': t.grouping},
+      {'key': 'freePlay', 'label': t.freePlay},
+      {'key': 'activity', 'label': t.activity},
+    ];
+
+    // Options fréquence
+    final freqOptions = [
+      {'key': 'never', 'label': t.never},
+      {'key': 'sometimes', 'label': t.sometimes},
+      {'key': 'often', 'label': t.often},
+    ];
 
     return Scaffold(
       backgroundColor: const Color(0xFFFCEFE3),
       appBar: AppBar(
         backgroundColor: Colors.orange,
-        title: const Text("Nouvelle observation"),
+        elevation: 0,
+        title: Text(t.newObservation),
       ),
-      body: _loading
-          ? const Center(
+      body: Center(
+        child: SingleChildScrollView(
+          child: SizedBox(
+            width: maxWidth,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircularProgressIndicator(color: Colors.orange),
-                  SizedBox(height: 15),
-                  Text(
-                    "Chargement des questions...",
-                    style: TextStyle(color: Colors.black54),
+                  // 🔹 Infos enfant
+                  _infoCard(t, fullName, child),
+                  const SizedBox(height: 25),
+
+                  // 🔹 Contexte
+                  _sectionTitle(t.context),
+                  _contextDropdown(t, contextOptions),
+                  const SizedBox(height: 25),
+
+                  // 🔹 Questions
+                  _sectionTitle(
+                    '1. ${t.answerAllQuestions.contains('all') ? "A du mal à rester concentré" : "A du mal à rester concentré"}',
+                  ),
+                  _choiceGroup(
+                    freqOptions,
+                    _reponseQ1Key,
+                    (val) => setState(() => _reponseQ1Key = val!),
+                  ),
+                  const SizedBox(height: 20),
+
+                  _sectionTitle('2. Interrompt souvent les autres'),
+                  _choiceGroup(
+                    freqOptions,
+                    _reponseQ2Key,
+                    (val) => setState(() => _reponseQ2Key = val!),
+                  ),
+                  const SizedBox(height: 20),
+
+                  _sectionTitle('3. A du mal à suivre les consignes'),
+                  _choiceGroup(
+                    freqOptions,
+                    _reponseQ3Key,
+                    (val) => setState(() => _reponseQ3Key = val!),
+                  ),
+                  const SizedBox(height: 25),
+
+                  // 🔹 Notes
+                  _sectionTitle(t.notesOptional),
+                  _notesField(t),
+                  const SizedBox(height: 40),
+
+                  // 🔹 Bouton soumettre
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.save),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                      ),
+                      onPressed: () => _submitObservation(t),
+                      label: Text(t.save, style: const TextStyle(fontSize: 18)),
+                    ),
                   ),
                 ],
               ),
-            )
-          : Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: SizedBox(
-                  width: maxWidth,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // ── Carte enfant ───────────────────
-                      _InfoCard(
-                        fullName: fullName,
-                        childCode: child.childCode,
-                        gender: child.gender,
-                        dateObservation: _dateObservation,
-                      ),
-                      const SizedBox(height: 20),
-
-                      // ── Contexte ───────────────────────
-                      _sectionTitle("Contexte"),
-                      _contextDropdown(),
-                      const SizedBox(height: 20),
-
-                      // ── Questions groupées par domaine ─
-                      ..._buildQuestionsByDomain(),
-                      const SizedBox(height: 20),
-
-                      // ── Notes ──────────────────────────
-                      _sectionTitle("Notes (optionnel)"),
-                      _notesField(),
-                      const SizedBox(height: 30),
-
-                      // ── Score résumé ───────────────────
-                      _ScorePreview(
-                        answers: _answers,
-                        total: _questions.length,
-                      ),
-                      const SizedBox(height: 20),
-
-                      // ── Bouton soumettre ───────────────
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton.icon(
-                          icon: _submitting
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.save, color: Colors.white),
-                          label: Text(
-                            _submitting
-                                ? "Envoi en cours..."
-                                : "Soumettre l'observation",
-                            style: const TextStyle(
-                              fontSize: 17,
-                              color: Colors.white,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange,
-                            disabledBackgroundColor: Colors.orange.withOpacity(
-                              0.5,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                          ),
-                          onPressed: _submitting ? null : _submit,
-                        ),
-                      ),
-                      const SizedBox(height: 30),
-                    ],
-                  ),
-                ),
-              ),
             ),
-    );
-  }
-
-  // ── Questions groupées par domaine ──────────────────────
-  List<Widget> _buildQuestionsByDomain() {
-    // Grouper les questions par domaine
-    final Map<String, List<Map<String, dynamic>>> grouped = {};
-    for (final q in _questions) {
-      final domain = q['domain'] as String? ?? 'other';
-      grouped.putIfAbsent(domain, () => []);
-      grouped[domain]!.add(q);
-    }
-
-    final widgets = <Widget>[];
-    grouped.forEach((domain, questions) {
-      widgets.add(
-        Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(15),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black12,
-                blurRadius: 8,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // En-tête domaine
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(15),
-                  ),
-                ),
-                child: Text(
-                  _domainLabels[domain] ?? domain,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.orange,
-                  ),
-                ),
-              ),
-
-              // Questions du domaine
-              ...questions.map((q) {
-                final qId = q['id'] as int;
-                final text =
-                    q['text_fr'] as String? ?? q['text_en'] as String? ?? '';
-                final val = _answers[qId] ?? 0;
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
-                      child: Text(
-                        text,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        _choiceBtn(qId, 0, val, "Jamais", Colors.green),
-                        _choiceBtn(qId, 1, val, "Parfois", Colors.orange),
-                        _choiceBtn(qId, 2, val, "Souvent", Colors.red),
-                      ],
-                    ),
-                    const Divider(height: 1, indent: 14, endIndent: 14),
-                  ],
-                );
-              }),
-            ],
-          ),
-        ),
-      );
-    });
-    return widgets;
-  }
-
-  Widget _choiceBtn(int qId, int val, int current, String label, Color color) {
-    final selected = current == val;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _answers[qId] = val),
-        child: Container(
-          margin: const EdgeInsets.all(6),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: selected
-                ? color.withOpacity(0.15)
-                : Colors.grey.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: selected ? color : Colors.grey.withOpacity(0.3),
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                val == 0
-                    ? Icons.check_circle_outline
-                    : val == 1
-                    ? Icons.access_time
-                    : Icons.warning_amber_outlined,
-                color: selected ? color : Colors.grey,
-                size: 20,
-              ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                  color: selected ? color : Colors.grey,
-                ),
-              ),
-            ],
           ),
         ),
       ),
     );
   }
 
-  // ── Helpers UI ─────────────────────────────────────────
-  Widget _sectionTitle(String title) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Text(
-      title,
-      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-    ),
-  );
-
-  Widget _contextDropdown() => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 15),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: Colors.orange),
-    ),
-    child: DropdownButton<String>(
-      value: _context,
-      isExpanded: true,
-      underline: const SizedBox(),
-      items: const [
-        DropdownMenuItem(value: "Regroupement", child: Text("Regroupement")),
-        DropdownMenuItem(value: "Jeu libre", child: Text("Jeu libre")),
-        DropdownMenuItem(value: "Activité", child: Text("Activité")),
-        DropdownMenuItem(value: "Récréation", child: Text("Récréation")),
-      ],
-      onChanged: (v) => setState(() => _context = v!),
-    ),
-  );
-
-  Widget _notesField() => Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: Colors.orange),
-    ),
-    child: TextField(
-      controller: _noteCtrl,
-      maxLines: 3,
-      decoration: const InputDecoration(
-        contentPadding: EdgeInsets.all(15),
-        border: InputBorder.none,
-        hintText: "Ajouter une note...",
-      ),
-    ),
-  );
-}
-
-// ══════════════════════════════════════════════════════════
-// Widget carte enfant
-// ══════════════════════════════════════════════════════════
-class _InfoCard extends StatelessWidget {
-  final String fullName;
-  final String? childCode;
-  final String gender;
-  final String dateObservation;
-
-  const _InfoCard({
-    required this.fullName,
-    required this.childCode,
-    required this.gender,
-    required this.dateObservation,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _infoCard(AppLocalizations t, String fullName, Child child) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.orange.shade200, width: 1.5),
         boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 4)),
-        ],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: Colors.orange.withOpacity(0.15),
-            child: Icon(
-              gender == 'girl' ? Icons.face_3 : Icons.face,
-              color: Colors.orange,
-              size: 30,
-            ),
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, 5),
           ),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
+        ],
+        border: Border.all(color: Colors.orange.shade200, width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.child_care, color: Colors.orange),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
                   fullName,
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                if (childCode != null && childCode!.isNotEmpty)
-                  Text(
-                    "Code : $childCode",
-                    style: const TextStyle(color: Colors.black54),
-                  ),
-                Text(
-                  "📅 $dateObservation",
-                  style: const TextStyle(color: Colors.black54),
-                ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (child.childCode != null && child.childCode!.isNotEmpty)
+            Text(
+              'Code : ${child.childCode}',
+              style: const TextStyle(fontSize: 15),
             ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Icon(
+                child.gender == 'girl' ? Icons.female : Icons.male,
+                color: Colors.orange,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                child.gender == 'girl' ? t.girl : t.boy,
+                style: const TextStyle(fontSize: 15),
+              ),
+              const SizedBox(width: 20),
+              const Icon(Icons.school, color: Colors.orange),
+              const SizedBox(width: 6),
+              Text(
+                'Classe ID : ${child.classId}',
+                style: const TextStyle(fontSize: 15),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Date : $_dateObservation',
+            style: const TextStyle(fontSize: 16),
           ),
         ],
       ),
     );
   }
-}
 
-// ══════════════════════════════════════════════════════════
-// Widget score preview en temps réel
-// ══════════════════════════════════════════════════════════
-class _ScorePreview extends StatelessWidget {
-  final Map<int, int> answers;
-  final int total;
-
-  const _ScorePreview({required this.answers, required this.total});
-
-  @override
-  Widget build(BuildContext context) {
-    if (answers.isEmpty || total == 0) return const SizedBox();
-
-    final score = answers.values.fold<int>(0, (a, b) => a + b);
-    final maxScore = total * 2;
-    final percent = (score / maxScore * 100).round();
-
-    Color color;
-    String label;
-    if (percent < 33) {
-      color = Colors.green;
-      label = "🟢 Risque Faible";
-    } else if (percent < 66) {
-      color = Colors.orange;
-      label = "🟠 Risque Modéré";
-    } else {
-      color = Colors.red;
-      label = "🔴 Risque Élevé";
-    }
-
+  Widget _contextDropdown(
+    AppLocalizations t,
+    List<Map<String, String>> options,
+  ) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 15),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: color, width: 1.5),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                "Score estimé",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-              ),
-              Text(label, style: TextStyle(color: color, fontSize: 14)),
-            ],
-          ),
-          Text(
-            "$percent%",
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
+      child: DropdownButton<String>(
+        value: _contexteKey,
+        isExpanded: true,
+        underline: const SizedBox(),
+        items: options
+            .map(
+              (o) =>
+                  DropdownMenuItem(value: o['key'], child: Text(o['label']!)),
+            )
+            .toList(),
+        onChanged: (val) => setState(() => _contexteKey = val!),
+      ),
+    );
+  }
+
+  Widget _notesField(AppLocalizations t) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange),
+      ),
+      child: TextField(
+        controller: _noteController,
+        maxLines: 4,
+        decoration: InputDecoration(
+          contentPadding: const EdgeInsets.all(15),
+          border: InputBorder.none,
+          hintText: t.addNote,
+        ),
+      ),
+    );
+  }
+
+  Widget _choiceGroup(
+    List<Map<String, String>> options,
+    String value,
+    ValueChanged<String?> onChanged,
+  ) {
+    return Column(
+      children: options.map((o) {
+        return RadioListTile<String>(
+          value: o['key']!,
+          groupValue: value,
+          title: Text(o['label']!),
+          activeColor: Colors.orange,
+          onChanged: onChanged,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(
+        title,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
     );
   }
