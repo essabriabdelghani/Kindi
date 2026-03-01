@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/teachers.dart';
 import '../services/db_service.dart';
 import '../l10n/app_localizations.dart';
+import '../services/export_service.dart';
 
 class AdminChildrenPage extends StatefulWidget {
   final Teacher admin;
@@ -15,6 +16,8 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
   List<Map<String, dynamic>> _all = [];
   List<Map<String, dynamic>> _filtered = [];
   bool _loading = true;
+  bool _exporting = false;
+  String _exportMsg = '';
   String _search = '';
 
   @override
@@ -35,6 +38,50 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
         _filtered = data;
         _loading = false;
       });
+  }
+
+  Future<void> _export() async {
+    if (_exporting) return;
+    setState(() {
+      _exporting = true;
+      _exportMsg = 'Chargement...';
+    });
+
+    final result = await ExportService.exportChildren(
+      admin: widget.admin,
+      onProgress: (msg) {
+        if (mounted) setState(() => _exportMsg = msg);
+      },
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _exporting = false;
+      _exportMsg = '';
+    });
+
+    if (result.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Aucun élève à exporter'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } else if (!result.ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur : ${result.errorMsg}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ ${result.count} élèves exportés'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
   void _filter(String q) {
@@ -109,62 +156,166 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
           ],
         ),
         iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Colors.orange))
-          : Column(
-              children: [
-                // ── Barre de recherche ──
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: TextField(
-                    onChanged: _filter,
-                    decoration: InputDecoration(
-                      hintText: 'Rechercher...',
-                      prefixIcon: const Icon(
-                        Icons.search,
-                        color: Colors.orange,
-                      ),
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
+        actions: [
+          _exporting
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
                       ),
                     ),
                   ),
-                ),
-                // ── Liste ──
-                Expanded(
-                  child: _filtered.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.child_care,
-                                size: 60,
-                                color: Colors.orange.shade100,
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                _search.isEmpty
-                                    ? 'Aucun élève'
-                                    : 'Aucun résultat',
-                                style: const TextStyle(color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
-                          itemCount: _filtered.length,
-                          itemBuilder: (_, i) => _card(_filtered[i]),
+                )
+              : GestureDetector(
+                  onTap: _export,
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade400,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.green.shade800.withOpacity(0.4),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
                         ),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.ios_share_rounded,
+                          color: Colors.white,
+                          size: 15,
+                        ),
+                        SizedBox(width: 5),
+                        Text(
+                          'Exporter',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ],
+        ],
+      ),
+      body: Column(
+        children: [
+          // ── Barre export en cours ──
+          if (_exporting)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              color: Colors.orange.shade50,
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      color: Colors.orange,
+                      strokeWidth: 2,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _exportMsg,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
+          Expanded(
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(color: Colors.orange),
+                  )
+                : Column(
+                    children: [
+                      // ── Barre de recherche ──
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: TextField(
+                          onChanged: _filter,
+                          decoration: InputDecoration(
+                            hintText: 'Rechercher...',
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              color: Colors.orange,
+                            ),
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 0,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                      ),
+                      // ── Liste ──
+                      Expanded(
+                        child: _filtered.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.child_care,
+                                      size: 60,
+                                      color: Colors.orange.shade100,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      _search.isEmpty
+                                          ? 'Aucun élève'
+                                          : 'Aucun résultat',
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  0,
+                                  12,
+                                  20,
+                                ),
+                                itemCount: _filtered.length,
+                                itemBuilder: (_, i) => _card(_filtered[i]),
+                              ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
