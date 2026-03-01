@@ -972,6 +972,67 @@ class DBService {
     );
   }
 
+  // ═══════════════════════════════════════════════════════
+  // TOUS LES ENFANTS D'UNE ÉCOLE avec détails complets
+  // (name, age, level de classe, professeur)
+  // ═══════════════════════════════════════════════════════
+  static Future<List<Map<String, dynamic>>> getAllChildrenWithDetails({
+    required String schoolName,
+    required String schoolCity,
+  }) async {
+    final db = await database;
+    // Filtrer par les teachers de l'école (pas par school de la classe)
+    // Cela garantit que tous les élèves de tous les profs de l'école apparaissent
+    return await db.rawQuery(
+      '''
+      SELECT
+        ch.id,
+        ch.child_code,
+        ch.first_name,
+        ch.last_name,
+        ch.gender,
+        ch.birth_date,
+        ch.latest_overall_risk_level,
+        ch.latest_observation_date,
+        ch.notes,
+        cl.name        AS class_name,
+        cl.level       AS class_level,
+        t.first_name   AS teacher_first_name,
+        t.last_name    AS teacher_last_name,
+        t.email        AS teacher_email
+      FROM children ch
+      INNER JOIN classes cl ON ch.class_id = cl.id
+      INNER JOIN teachers t  ON ch.main_teacher_id = t.id
+      WHERE t.school_name = ?
+        AND t.school_city = ?
+        AND t.deleted = 0
+        AND ch.deleted = 0
+      ORDER BY t.first_name ASC, ch.first_name ASC
+    ''',
+      [schoolName, schoolCity],
+    );
+  }
+
+  // Nombre total d'enfants dans une école (via teachers de l'école)
+  static Future<int> countChildrenInSchool({
+    required String schoolName,
+    required String schoolCity,
+  }) async {
+    final db = await database;
+    final result = await db.rawQuery(
+      '''
+      SELECT COUNT(*) AS cnt FROM children ch
+      INNER JOIN teachers t ON ch.main_teacher_id = t.id
+      WHERE t.school_name = ?
+        AND t.school_city = ?
+        AND t.deleted = 0
+        AND ch.deleted = 0
+    ''',
+      [schoolName, schoolCity],
+    );
+    return (result.first['cnt'] as int?) ?? 0;
+  }
+
   static Future<List<Map<String, dynamic>>> getTeachersBySchool({
     required String schoolName,
     required String schoolCity,

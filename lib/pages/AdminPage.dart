@@ -536,68 +536,73 @@ class _AdminPageState extends State<AdminPage> {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.cloud_done, color: Colors.white70, size: 14),
-                    SizedBox(width: 6),
-                    Text(
-                      'Synchronisé en temps réel',
-                      style: TextStyle(color: Colors.white70, fontSize: 11),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  widget.admin.schoolName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  widget.admin.schoolCity,
-                  style: const TextStyle(color: Colors.white60, fontSize: 12),
-                ),
-              ],
+          // ── Ligne 1 : nom école ──
+          Text(
+            widget.admin.schoolName,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          _statBadge('$total', t.allTeachers, Icons.group),
-          const SizedBox(width: 10),
-          _statBadge('$active', t.active, Icons.check_circle),
+          Text(
+            widget.admin.schoolCity,
+            style: const TextStyle(color: Colors.white60, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          // ── Stats : profs + actifs + élèves ──
+          Row(
+            children: [
+              _statBlock(
+                icon: Icons.group,
+                value: '$total',
+                label: 'Professeurs',
+              ),
+              _vDivider(),
+              _statBlock(
+                icon: Icons.check_circle_outline,
+                value: '$active',
+                label: 'Actifs',
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _statBadge(String value, String label, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(14),
-      ),
+  Widget _vDivider() => Container(
+    width: 1,
+    margin: const EdgeInsets.symmetric(horizontal: 12),
+    color: Colors.white24,
+  );
+
+  Widget _statBlock({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Expanded(
       child: Column(
         children: [
-          Icon(icon, color: Colors.white, size: 16),
-          const SizedBox(height: 3),
+          Icon(icon, color: Colors.white70, size: 18),
+          const SizedBox(height: 4),
           Text(
             value,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 18,
+              fontSize: 22,
               fontWeight: FontWeight.bold,
             ),
           ),
           Text(
             label,
-            style: const TextStyle(color: Colors.white70, fontSize: 9),
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white70, fontSize: 10),
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -639,6 +644,7 @@ class _AdminPageState extends State<AdminPage> {
     final active = (teacher['is_active'] as int? ?? 1) == 1;
     final role = teacher['role'] as String? ?? 'teacher';
     final initials = fullName.isNotEmpty ? fullName[0].toUpperCase() : '?';
+    final isAdmin = role == 'admin' || role == 'super_admin';
 
     return FutureBuilder<Map<String, dynamic>>(
       future: DBService.getTeacherStats(id),
@@ -647,236 +653,158 @@ class _AdminPageState extends State<AdminPage> {
         final nbClass = stats['classes'] ?? 0;
         final nbEleves = stats['students'] ?? 0;
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
-            border: Border.all(
-              color: active ? Colors.green.shade100 : Colors.grey.shade200,
-            ),
+        return Card(
+          margin: const EdgeInsets.only(bottom: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
           ),
-          child: Column(
-            children: [
-              // ── Ligne principale ──
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 6, 8),
-                child: Row(
+          elevation: 1,
+          child: ListTile(
+            contentPadding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+            leading: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: active
+                      ? Colors.purple.shade100
+                      : Colors.grey.shade200,
+                  child: Text(
+                    initials,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: active ? Colors.purple.shade700 : Colors.grey,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: -1,
+                  bottom: -1,
+                  child: Container(
+                    width: 11,
+                    height: 11,
+                    decoration: BoxDecoration(
+                      color: active ? Colors.green : Colors.grey,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            title: Text(
+              fullName.isEmpty ? t.roleTeacher : fullName,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  email,
+                  style: const TextStyle(fontSize: 11, color: Colors.black45),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
                   children: [
-                    // Avatar
-                    Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 24,
-                          backgroundColor: active
-                              ? Colors.purple.shade100
-                              : Colors.grey.shade200,
-                          child: Text(
-                            initials,
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: active
-                                  ? Colors.purple.shade700
-                                  : Colors.grey,
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            width: 12,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              color: active ? Colors.green : Colors.grey,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 12),
-                    // Infos
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  fullName.isEmpty ? t.roleTeacher : fullName,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              if (role == 'admin' || role == 'super_admin')
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 7,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.purple.shade100,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    role == 'super_admin'
-                                        ? '👑 Super'
-                                        : '🔑 Admin',
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      color: Colors.purple.shade700,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          Text(
-                            email,
-                            style: const TextStyle(
-                              color: Colors.black54,
-                              fontSize: 11,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: active
-                                  ? Colors.green.shade50
-                                  : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              active ? '🟢 ${t.active}' : '⚫ Inactif',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: active
-                                    ? Colors.green.shade700
-                                    : Colors.grey,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Menu
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, color: Colors.black45),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      onSelected: (v) {
-                        if (v == 'edit') _openTeacherForm(teacher: teacher);
-                        if (v == 'toggle') _toggleActive(teacher);
-                        if (v == 'archive') _archiveTeacher(teacher);
-                        if (v == 'delete') _deleteTeacher(teacher);
-                      },
-                      itemBuilder: (_) => [
-                        _menuItem('edit', t.edit, Icons.edit, Colors.blue),
-                        _menuItem(
-                          'toggle',
-                          active ? t.deactivate : t.activate,
-                          Icons.toggle_on,
-                          Colors.orange,
-                        ),
-                        _menuItem(
-                          'archive',
-                          t.archiveTeacher,
-                          Icons.archive,
-                          Colors.grey,
-                        ),
-                        const PopupMenuDivider(),
-                        _menuItem(
-                          'delete',
-                          t.delete,
-                          Icons.delete_forever,
-                          Colors.red,
-                          textColor: Colors.red,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              // ── Stats ──
-              Container(
-                margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF5F5F5),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    _statItem(
-                      Icons.class_,
-                      '$nbClass',
-                      t.myClasses,
-                      Colors.orange,
-                    ),
-                    const SizedBox(width: 8),
+                    // École + ville
                     Container(
-                      width: 1,
-                      height: 20,
-                      color: Colors.grey.shade300,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '🏫 ${(teacher['school_name'] ?? '').toString()} — ${(teacher['school_city'] ?? '').toString()}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.orange.shade800,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    const SizedBox(width: 8),
-                    _statItem(
-                      Icons.child_care,
-                      '$nbEleves',
-                      t.students,
-                      Colors.blue,
+                    // Badge admin
+                    if (isAdmin)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.purple.shade100,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          role == 'super_admin' ? '👑 Super' : '🔑 Admin',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.purple.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    // Stats classes / élèves
+                    Text(
+                      '📚 $nbClass  👦 $nbEleves',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Colors.black45,
+                      ),
                     ),
                   ],
                 ),
+              ],
+            ),
+            trailing: PopupMenuButton<String>(
+              icon: const Icon(
+                Icons.more_vert,
+                color: Colors.black45,
+                size: 20,
               ),
-            ],
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              onSelected: (v) {
+                if (v == 'edit') _openTeacherForm(teacher: teacher);
+                if (v == 'toggle') _toggleActive(teacher);
+                if (v == 'archive') _archiveTeacher(teacher);
+                if (v == 'delete') _deleteTeacher(teacher);
+              },
+              itemBuilder: (_) => [
+                _menuItem('edit', t.edit, Icons.edit, Colors.blue),
+                _menuItem(
+                  'toggle',
+                  active ? t.deactivate : t.activate,
+                  Icons.toggle_on,
+                  Colors.orange,
+                ),
+                _menuItem(
+                  'archive',
+                  t.archiveTeacher,
+                  Icons.archive,
+                  Colors.grey,
+                ),
+                const PopupMenuDivider(),
+                _menuItem(
+                  'delete',
+                  t.delete,
+                  Icons.delete_forever,
+                  Colors.red,
+                  textColor: Colors.red,
+                ),
+              ],
+            ),
           ),
         );
       },
-    );
-  }
-
-  Widget _statItem(IconData icon, String value, String label, Color color) {
-    return Row(
-      children: [
-        Icon(icon, size: 15, color: color),
-        const SizedBox(width: 5),
-        Text(
-          value,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: color,
-            fontSize: 14,
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: const TextStyle(color: Colors.black45, fontSize: 11),
-        ),
-      ],
     );
   }
 

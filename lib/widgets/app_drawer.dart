@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/teachers.dart';
 import '../l10n/app_localizations.dart';
+import '../pages/AdminChildrenPage.dart';
 
 // ✅ SÉCURITÉ : aucun changement de rôle possible depuis le drawer
 // Le rôle est défini UNIQUEMENT dans Firestore par le super-admin
@@ -147,6 +148,20 @@ class AppDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onSelect(2);
+                    },
+                  ),
+                  _NavTile(
+                    icon: Icons.child_care_rounded,
+                    label: 'Total élèves',
+                    color: Colors.orange,
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AdminChildrenPage(admin: user),
+                        ),
+                      );
                     },
                   ),
                 ],
