@@ -523,14 +523,14 @@ class _AdminPageState extends State<AdminPage> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF6A1B9A), Color(0xFF9C27B0)],
+          colors: [Color(0xFF5D4037), Color(0xFF795548)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.purple.withOpacity(0.3),
+            color: const Color(0xFF5D4037).withOpacity(0.3),
             blurRadius: 14,
             offset: const Offset(0, 6),
           ),
@@ -667,14 +667,14 @@ class _AdminPageState extends State<AdminPage> {
                 CircleAvatar(
                   radius: 22,
                   backgroundColor: active
-                      ? Colors.purple.shade100
+                      ? const Color(0xFFD7B896)
                       : Colors.grey.shade200,
                   child: Text(
                     initials,
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: active ? Colors.purple.shade700 : Colors.grey,
+                      color: active ? const Color(0xFF5D4037) : Colors.grey,
                     ),
                   ),
                 ),
@@ -739,14 +739,14 @@ class _AdminPageState extends State<AdminPage> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.purple.shade100,
+                          color: const Color(0xFFD7B896),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
                           role == 'super_admin' ? '👑 Super' : '🔑 Admin',
                           style: TextStyle(
                             fontSize: 10,
-                            color: Colors.purple.shade700,
+                            color: const Color(0xFF5D4037),
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -836,7 +836,11 @@ class _AdminPageState extends State<AdminPage> {
         padding: const EdgeInsets.all(40),
         child: Column(
           children: [
-            Icon(Icons.people_outline, size: 64, color: Colors.purple.shade100),
+            Icon(
+              Icons.people_outline,
+              size: 64,
+              color: const Color(0xFFD7B896),
+            ),
             const SizedBox(height: 16),
             Text(
               t.noTeachers,

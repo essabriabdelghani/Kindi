@@ -71,6 +71,7 @@ class _MyAppState extends State<MyApp> {
       title: 'KINDI',
       locale: _locale,
       supportedLocales: const [Locale('fr'), Locale('ar'), Locale('en')],
+      debugShowCheckedModeBanner: false,
       localizationsDelegates: const [
         AppLocalizations.delegate,
         GlobalMaterialLocalizations.delegate,

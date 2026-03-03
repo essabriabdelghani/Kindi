@@ -43,11 +43,11 @@ class _DashboardPageState extends State<DashboardPage> {
   Color _levelColor(String level) {
     final l = level.toLowerCase();
     if (l.contains('grande') || l.contains('gs'))
-      return const Color(0xFF2E7D32);
-    if (l.contains('moyen') || l.contains('ms')) return const Color(0xFFE65100);
+      return const Color(0xFFCD853F);
+    if (l.contains('moyen') || l.contains('ms')) return const Color(0xFFCD853F);
     if (l.contains('petite') || l.contains('ps'))
-      return const Color(0xFF1565C0);
-    return const Color(0xFF6A1B9A);
+      return const Color(0xFFCD853F);
+    return const Color(0xFFCD853F);
   }
 
   IconData _levelIcon(String level) {

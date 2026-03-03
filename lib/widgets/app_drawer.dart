@@ -24,7 +24,7 @@ class AppDrawer extends StatelessWidget {
     final t = AppLocalizations.of(context)!;
     final isAdmin = user.role == 'admin' || user.role == 'super_admin';
 
-    final roleBg = isAdmin ? const Color(0xFF6A1B9A) : Colors.orange;
+    final roleBg = isAdmin ? const Color(0xFF5D4037) : Colors.orange;
     final roleLabel = user.role == 'super_admin'
         ? '👑 ${t.roleSuperAdmin}'
         : isAdmin
@@ -182,7 +182,7 @@ class AppDrawer extends StatelessWidget {
                   _NavTile(
                     icon: Icons.admin_panel_settings_rounded,
                     label: t.administration,
-                    color: const Color(0xFF6A1B9A),
+                    color: const Color(0xFF5D4037),
                     onTap: () {
                       Navigator.of(context).pop();
                       onSelect(2);

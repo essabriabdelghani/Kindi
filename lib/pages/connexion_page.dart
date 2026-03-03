@@ -33,7 +33,7 @@ class _ConnexionPageState extends State<ConnexionPage> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        actions: const [LanguageSelector()],
+        actions: [const LanguageSelector(iconColor: Color(0xFF26C6DA))],
       ),
       body: Center(
         child: SingleChildScrollView(
