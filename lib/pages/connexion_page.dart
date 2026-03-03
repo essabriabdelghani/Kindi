@@ -28,12 +28,17 @@ class _ConnexionPageState extends State<ConnexionPage> {
     double cardWidth = deviceWidth > 600 ? 450 : deviceWidth * 0.9;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFCEFE3),
+      backgroundColor: const Color.fromARGB(255, 97, 178, 221),
       // ✅ Bouton langue en haut à droite
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        actions: [const LanguageSelector(iconColor: Color(0xFF26C6DA))],
+        actions: [
+          IconTheme(
+            data: const IconThemeData(color: Color.fromARGB(255, 38, 198, 218)),
+            child: const LanguageSelector(),
+          ),
+        ],
       ),
       body: Center(
         child: SingleChildScrollView(

@@ -51,9 +51,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   crypto: ^3.0.7
 
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: "^0.13.1"
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -66,6 +68,13 @@ dev_dependencies:
 # following page: https://dart.dev/tools/pub/pubspec
 
 # The following section is specific to Flutter packages.
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/logo.jpeg"
+  # Configuration pour l'icône adaptative (Android 8.0+)
+  adaptive_icon_background: "#FF9800" # Orange vif (style Material Design)
+  adaptive_icon_foreground: "assets/images/logo.jpeg" # Votre logo (doit être transparent)
 flutter:
   generate: true
 
