@@ -362,4 +362,116 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get roleSuperAdmin => 'Super Admin';
+
+  @override
+  String get domainInattention => 'Inattention (Q1–Q9)';
+
+  @override
+  String get domainHyperactivity => 'Hyperactivité & Impulsivité (Q10–Q18)';
+
+  @override
+  String get domainSocial => 'Autorégulation & Social (Q19–Q24)';
+
+  @override
+  String get observationDate => 'Date d\'observation';
+
+  @override
+  String get childCode => 'Code élève';
+
+  @override
+  String get itemLabel => 'Item';
+
+  @override
+  String get scoreResult => 'Résultats';
+
+  @override
+  String get inattentionScore => 'Score Inattention';
+
+  @override
+  String get hyperactivityScore => 'Score Hyperactivité';
+
+  @override
+  String get socialScore => 'Score Social';
+
+  @override
+  String get totalScore => 'Score Total';
+
+  @override
+  String get q1 => 'A du mal à rester concentré pendant les activités.';
+
+  @override
+  String get q2 =>
+      'Se laisse facilement distraire par les bruits ou les mouvements.';
+
+  @override
+  String get q3 => 'A du mal à terminer les tâches ou les activités.';
+
+  @override
+  String get q4 => 'Oublie facilement les consignes.';
+
+  @override
+  String get q5 =>
+      'A du mal à suivre les consignes comportant plusieurs étapes.';
+
+  @override
+  String get q6 =>
+      'Évite ou n\'aime pas les tâches nécessitant une attention soutenue.';
+
+  @override
+  String get q7 => 'Fait des erreurs d\'inattention dans des tâches simples.';
+
+  @override
+  String get q8 => 'A des difficultés à organiser ses tâches ou son matériel.';
+
+  @override
+  String get q9 => 'Perd souvent les objets nécessaires aux activités.';
+
+  @override
+  String get q10 => 'A du mal à rester assis pendant les activités de groupe.';
+
+  @override
+  String get q11 =>
+      'Bouge excessivement : court, grimpe ou saute à des moments inappropriés.';
+
+  @override
+  String get q12 => 'S\'agite constamment (mains, pieds ou corps).';
+
+  @override
+  String get q13 => 'Parle excessivement pendant les activités.';
+
+  @override
+  String get q14 => 'Interrompt fréquemment les camarades ou les adultes.';
+
+  @override
+  String get q15 => 'A du mal à attendre son tour.';
+
+  @override
+  String get q16 => 'Agit sans réfléchir aux conséquences.';
+
+  @override
+  String get q17 => 'Répond trop vite avant la fin de la question.';
+
+  @override
+  String get q18 => 'Quitte sa place ou son espace de travail sans permission.';
+
+  @override
+  String get q19 =>
+      'A du mal à gérer ses émotions (frustration, colère, tristesse).';
+
+  @override
+  String get q20 => 'Se fâche rapidement lorsque les routines changent.';
+
+  @override
+  String get q21 => 'A du mal à se calmer après une excitation ou un conflit.';
+
+  @override
+  String get q22 => 'A du mal à partager ou à jouer de manière coopérative.';
+
+  @override
+  String get q23 =>
+      'Montre des comportements physiques impulsifs (attraper, pousser).';
+
+  @override
+  String get q24 =>
+      'A besoin de rappels fréquents pour suivre les règles ou les routines.';
 }

@@ -359,4 +359,110 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get roleSuperAdmin => 'مدير عام';
+
+  @override
+  String get domainInattention => 'الانتباه (Q1–Q9)';
+
+  @override
+  String get domainHyperactivity => 'فرط الحركة والاندفاعية (Q10–Q18)';
+
+  @override
+  String get domainSocial => 'التنظيم الذاتي والاجتماعي (Q19–Q24)';
+
+  @override
+  String get observationDate => 'تاريخ الملاحظة';
+
+  @override
+  String get childCode => 'رمز التلميذ';
+
+  @override
+  String get itemLabel => 'البند';
+
+  @override
+  String get scoreResult => 'النتائج';
+
+  @override
+  String get inattentionScore => 'نتيجة الانتباه';
+
+  @override
+  String get hyperactivityScore => 'نتيجة فرط الحركة';
+
+  @override
+  String get socialScore => 'النتيجة الاجتماعية';
+
+  @override
+  String get totalScore => 'النتيجة الإجمالية';
+
+  @override
+  String get q1 => 'يواجه صعوبة في التركيز أثناء الأنشطة.';
+
+  @override
+  String get q2 => 'يتشتت بسهولة بسبب الأصوات أو الحركات.';
+
+  @override
+  String get q3 => 'يجد صعوبة في إنهاء المهام أو الأنشطة.';
+
+  @override
+  String get q4 => 'ينسى التعليمات بسهولة.';
+
+  @override
+  String get q5 => 'يواجه صعوبة في اتباع التعليمات متعددة الخطوات.';
+
+  @override
+  String get q6 => 'يتجنب أو لا يحب المهام التي تتطلب تركيزاً مستمراً.';
+
+  @override
+  String get q7 => 'يرتكب أخطاء غير متعمدة في المهام البسيطة.';
+
+  @override
+  String get q8 => 'يجد صعوبة في تنظيم المهام أو المواد.';
+
+  @override
+  String get q9 => 'يفقد كثيراً الأشياء اللازمة للأنشطة.';
+
+  @override
+  String get q10 => 'يجد صعوبة في البقاء جالساً أثناء الأنشطة الجماعية.';
+
+  @override
+  String get q11 =>
+      'يتحرك بشكل مفرط: يركض أو يتسلق أو يقفز في أوقات غير مناسبة.';
+
+  @override
+  String get q12 => 'يتململ باستمرار (اليدين، القدمين أو الجسم).';
+
+  @override
+  String get q13 => 'يتحدث كثيراً أثناء الأنشطة.';
+
+  @override
+  String get q14 => 'يقاطع زملاءه أو الكبار بشكل متكرر.';
+
+  @override
+  String get q15 => 'يجد صعوبة في الانتظار لدوره.';
+
+  @override
+  String get q16 => 'يتصرف دون التفكير في العواقب.';
+
+  @override
+  String get q17 => 'يجيب بسرعة قبل انتهاء السؤال.';
+
+  @override
+  String get q18 => 'يترك مكانه أو مساحة عمله بدون إذن.';
+
+  @override
+  String get q19 => 'يواجه صعوبة في التحكم بمشاعره (الإحباط، الغضب، الحزن).';
+
+  @override
+  String get q20 => 'يغضب بسرعة عند تغيير الروتين اليومي.';
+
+  @override
+  String get q21 => 'يجد صعوبة في الهدوء بعد الانفعال أو النزاع.';
+
+  @override
+  String get q22 => 'يواجه صعوبة في المشاركة أو اللعب بطريقة تعاونية.';
+
+  @override
+  String get q23 => 'يظهر سلوكيات جسدية متهورة (كالشد أو الدفع).';
+
+  @override
+  String get q24 => 'يحتاج إلى تذكيرات متكررة لاتباع القواعد أو الروتين.';
 }

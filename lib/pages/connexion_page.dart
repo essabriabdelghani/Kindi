@@ -270,8 +270,9 @@ class _ConnexionPageState extends State<ConnexionPage> {
                     const SizedBox(height: 20),
 
                     // CREATE ACCOUNT
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(t.noAccount),
                         TextButton(

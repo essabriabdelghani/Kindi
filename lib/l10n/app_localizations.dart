@@ -801,6 +801,216 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Super Admin'**
   String get roleSuperAdmin;
+
+  /// No description provided for @domainInattention.
+  ///
+  /// In en, this message translates to:
+  /// **'Inattention (Q1–Q9)'**
+  String get domainInattention;
+
+  /// No description provided for @domainHyperactivity.
+  ///
+  /// In en, this message translates to:
+  /// **'Hyperactivity & Impulsivity (Q10–Q18)'**
+  String get domainHyperactivity;
+
+  /// No description provided for @domainSocial.
+  ///
+  /// In en, this message translates to:
+  /// **'Self-Regulation & Social (Q19–Q24)'**
+  String get domainSocial;
+
+  /// No description provided for @observationDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Observation date'**
+  String get observationDate;
+
+  /// No description provided for @childCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Student code'**
+  String get childCode;
+
+  /// No description provided for @itemLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Item'**
+  String get itemLabel;
+
+  /// No description provided for @scoreResult.
+  ///
+  /// In en, this message translates to:
+  /// **'Results'**
+  String get scoreResult;
+
+  /// No description provided for @inattentionScore.
+  ///
+  /// In en, this message translates to:
+  /// **'Inattention Score'**
+  String get inattentionScore;
+
+  /// No description provided for @hyperactivityScore.
+  ///
+  /// In en, this message translates to:
+  /// **'Hyperactivity Score'**
+  String get hyperactivityScore;
+
+  /// No description provided for @socialScore.
+  ///
+  /// In en, this message translates to:
+  /// **'Social Score'**
+  String get socialScore;
+
+  /// No description provided for @totalScore.
+  ///
+  /// In en, this message translates to:
+  /// **'Total Score'**
+  String get totalScore;
+
+  /// No description provided for @q1.
+  ///
+  /// In en, this message translates to:
+  /// **'Has difficulty staying focused during activities.'**
+  String get q1;
+
+  /// No description provided for @q2.
+  ///
+  /// In en, this message translates to:
+  /// **'Gets easily distracted by noises or movements.'**
+  String get q2;
+
+  /// No description provided for @q3.
+  ///
+  /// In en, this message translates to:
+  /// **'Has trouble finishing tasks or activities.'**
+  String get q3;
+
+  /// No description provided for @q4.
+  ///
+  /// In en, this message translates to:
+  /// **'Forgets instructions easily.'**
+  String get q4;
+
+  /// No description provided for @q5.
+  ///
+  /// In en, this message translates to:
+  /// **'Has difficulty following multi-step instructions.'**
+  String get q5;
+
+  /// No description provided for @q6.
+  ///
+  /// In en, this message translates to:
+  /// **'Avoids or dislikes tasks that require sustained attention.'**
+  String get q6;
+
+  /// No description provided for @q7.
+  ///
+  /// In en, this message translates to:
+  /// **'Makes careless mistakes in simple tasks.'**
+  String get q7;
+
+  /// No description provided for @q8.
+  ///
+  /// In en, this message translates to:
+  /// **'Has difficulty organizing tasks or materials.'**
+  String get q8;
+
+  /// No description provided for @q9.
+  ///
+  /// In en, this message translates to:
+  /// **'Frequently loses objects needed for activities.'**
+  String get q9;
+
+  /// No description provided for @q10.
+  ///
+  /// In en, this message translates to:
+  /// **'Has difficulty remaining seated during group activities.'**
+  String get q10;
+
+  /// No description provided for @q11.
+  ///
+  /// In en, this message translates to:
+  /// **'Moves excessively: runs, climbs, or jumps at inappropriate times.'**
+  String get q11;
+
+  /// No description provided for @q12.
+  ///
+  /// In en, this message translates to:
+  /// **'Fidgets constantly (hands, feet, or body).'**
+  String get q12;
+
+  /// No description provided for @q13.
+  ///
+  /// In en, this message translates to:
+  /// **'Talks excessively during activities.'**
+  String get q13;
+
+  /// No description provided for @q14.
+  ///
+  /// In en, this message translates to:
+  /// **'Interrupts classmates or adults frequently.'**
+  String get q14;
+
+  /// No description provided for @q15.
+  ///
+  /// In en, this message translates to:
+  /// **'Has difficulty waiting for their turn.'**
+  String get q15;
+
+  /// No description provided for @q16.
+  ///
+  /// In en, this message translates to:
+  /// **'Acts without thinking about consequences.'**
+  String get q16;
+
+  /// No description provided for @q17.
+  ///
+  /// In en, this message translates to:
+  /// **'Gives quick answers before questions are finished.'**
+  String get q17;
+
+  /// No description provided for @q18.
+  ///
+  /// In en, this message translates to:
+  /// **'Leaves seat or work area when not supposed to.'**
+  String get q18;
+
+  /// No description provided for @q19.
+  ///
+  /// In en, this message translates to:
+  /// **'Has difficulty managing emotions (frustration, anger, sadness).'**
+  String get q19;
+
+  /// No description provided for @q20.
+  ///
+  /// In en, this message translates to:
+  /// **'Becomes upset quickly when routines change.'**
+  String get q20;
+
+  /// No description provided for @q21.
+  ///
+  /// In en, this message translates to:
+  /// **'Struggles to calm down after excitement or conflict.'**
+  String get q21;
+
+  /// No description provided for @q22.
+  ///
+  /// In en, this message translates to:
+  /// **'Has difficulty sharing or playing cooperatively.'**
+  String get q22;
+
+  /// No description provided for @q23.
+  ///
+  /// In en, this message translates to:
+  /// **'Shows impulsive physical behaviors (grabbing, pushing).'**
+  String get q23;
+
+  /// No description provided for @q24.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs frequent reminders to follow rules or routines.'**
+  String get q24;
 }
 
 class _AppLocalizationsDelegate
