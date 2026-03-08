@@ -1,3 +1,8 @@
+// ============================================================
+// AdminPage.dart — lib/pages/AdminPage.dart
+// Multi-école : admin peut gérer plusieurs écoles
+// ============================================================
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
@@ -5,14 +10,6 @@ import '../models/teachers.dart';
 import '../services/db_service.dart';
 import '../services/firestore_service.dart';
 
-// ═══════════════════════════════════════════════════════════
-// AdminPage — synchronisée avec Firestore en temps réel
-//
-// Architecture :
-//   • Lecture  : Stream Firestore → temps réel
-//   • Écriture : Firestore d'abord, puis SQLite (synced=1)
-//   • Offline  : fallback sur SQLite local
-// ═══════════════════════════════════════════════════════════
 class AdminPage extends StatefulWidget {
   final Teacher admin;
   const AdminPage({super.key, required this.admin});
@@ -24,23 +21,236 @@ class AdminPage extends StatefulWidget {
 class _AdminPageState extends State<AdminPage> {
   String _search = '';
 
-  // ── Écriture Firestore + SQLite ──────────────────────────
+  // ✅ École sélectionnée pour le filtre (null = toutes)
+  Map<String, String>? _selectedSchool;
 
+  // ✅ Liste des écoles gérées (mise à jour dynamiquement)
+  List<Map<String, String>> _managedSchools = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _managedSchools = widget.admin.allManagedSchools;
+    _migrateSchoolKeys();
+  }
+
+  // ── École actuellement filtrée ───────────────────────────
+  String get _currentSchoolKey {
+    if (_selectedSchool != null) {
+      return '${_selectedSchool!['name']}__${_selectedSchool!['city']}';
+    }
+    // Par défaut : première école (principale)
+    final schools = widget.admin.allManagedSchools;
+    if (schools.isEmpty) return '';
+    return '${schools.first['name']}__${schools.first['city']}';
+  }
+
+  // ── Écriture Firestore + SQLite ──────────────────────────
   Future<void> _firestoreUpdate(
     int teacherId,
     Map<String, dynamic> data,
   ) async {
-    final docId = 'teacher_$teacherId';
-    // 1. Firestore d'abord
-    await FirebaseFirestore.instance.collection('teachers').doc(docId).set({
-      ...data,
-      'updated_at': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    // 2. SQLite ensuite (synced=1 car déjà dans Firestore)
+    await FirebaseFirestore.instance
+        .collection('teachers')
+        .doc('teacher_$teacherId')
+        .set({
+          ...data,
+          'updated_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
     await DBService.updateTeacher(
       teacherId: teacherId,
       data: {...data, 'synced': 1},
     );
+  }
+
+  // ── Ajouter une école gérée ──────────────────────────────
+  Future<void> _addManagedSchool() async {
+    final nameCtrl = TextEditingController();
+    final cityCtrl = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.add_business, color: Colors.orange),
+            SizedBox(width: 10),
+            Text('Ajouter une école', style: TextStyle(fontSize: 17)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: InputDecoration(
+                labelText: 'Nom de l\'école',
+                prefixIcon: const Icon(Icons.school, color: Colors.orange),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: cityCtrl,
+              decoration: InputDecoration(
+                labelText: 'Ville',
+                prefixIcon: const Icon(
+                  Icons.location_city,
+                  color: Colors.orange,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () async {
+              final name = nameCtrl.text.trim().toLowerCase();
+              final city = cityCtrl.text.trim().toLowerCase();
+              if (name.isEmpty || city.isEmpty) return;
+
+              // Vérifier si déjà présente
+              final exists = _managedSchools.any(
+                (s) => s['name'] == name && s['city'] == city,
+              );
+              if (exists) {
+                Navigator.pop(ctx);
+                return;
+              }
+
+              // Ajouter dans Firestore
+              await FirestoreService.addManagedSchool(
+                adminId: widget.admin.id!,
+                schoolName: name,
+                schoolCity: city,
+              );
+
+              // Ajouter dans SQLite
+              final newSchools = [
+                ..._managedSchools,
+                {'name': name, 'city': city},
+              ];
+              // Exclure l'école principale de la liste managed_schools
+              final primary = {
+                'name': widget.admin.schoolName.trim().toLowerCase(),
+                'city': widget.admin.schoolCity.trim().toLowerCase(),
+              };
+              final extrasOnly = newSchools
+                  .where(
+                    (s) =>
+                        s['name'] != primary['name'] ||
+                        s['city'] != primary['city'],
+                  )
+                  .toList();
+              await DBService.updateManagedSchools(
+                adminId: widget.admin.id!,
+                schools: extrasOnly,
+              );
+
+              if (mounted) {
+                setState(() => _managedSchools = [primary, ...extrasOnly]);
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('✅ École ajoutée : $name — $city'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            child: const Text('Ajouter', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Retirer une école gérée ──────────────────────────────
+  Future<void> _removeManagedSchool(Map<String, String> school) async {
+    // Ne pas supprimer l'école principale
+    final primary = {
+      'name': widget.admin.schoolName.trim().toLowerCase(),
+      'city': widget.admin.schoolCity.trim().toLowerCase(),
+    };
+    if (school['name'] == primary['name'] &&
+        school['city'] == primary['city']) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de retirer l\'école principale'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Retirer l\'école ?'),
+        content: Text('${school['name']} — ${school['city']}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Retirer', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    await FirestoreService.removeManagedSchool(
+      adminId: widget.admin.id!,
+      schoolName: school['name']!,
+      schoolCity: school['city']!,
+    );
+
+    final newSchools = _managedSchools
+        .where(
+          (s) => s['name'] != school['name'] || s['city'] != school['city'],
+        )
+        .toList();
+    final extrasOnly = newSchools
+        .where(
+          (s) => s['name'] != primary['name'] || s['city'] != primary['city'],
+        )
+        .toList();
+    await DBService.updateManagedSchools(
+      adminId: widget.admin.id!,
+      schools: extrasOnly,
+    );
+
+    if (mounted) {
+      setState(() {
+        _managedSchools = newSchools;
+        if (_selectedSchool?['name'] == school['name'] &&
+            _selectedSchool?['city'] == school['city']) {
+          _selectedSchool = null;
+        }
+      });
+    }
   }
 
   // ── Activer / Désactiver ─────────────────────────────────
@@ -50,13 +260,12 @@ class _AdminPageState extends State<AdminPage> {
     await _firestoreUpdate(id, {'is_active': active ? 0 : 1});
   }
 
-  // ── Archiver ────────────────────────────────────────────
+  // ── Archiver ─────────────────────────────────────────────
   Future<void> _archiveTeacher(Map<String, dynamic> teacher) async {
     final t = AppLocalizations.of(context)!;
     final id = teacher['local_id'] as int? ?? teacher['id'] as int;
     final name = '${teacher['first_name'] ?? ''} ${teacher['last_name'] ?? ''}'
         .trim();
-
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -79,13 +288,12 @@ class _AdminPageState extends State<AdminPage> {
     if (ok == true) await _firestoreUpdate(id, {'deleted': 1});
   }
 
-  // ── Supprimer définitivement ─────────────────────────────
+  // ── Supprimer ────────────────────────────────────────────
   Future<void> _deleteTeacher(Map<String, dynamic> teacher) async {
     final t = AppLocalizations.of(context)!;
     final id = teacher['local_id'] as int? ?? teacher['id'] as int;
     final name = '${teacher['first_name'] ?? ''} ${teacher['last_name'] ?? ''}'
         .trim();
-
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -143,14 +351,11 @@ class _AdminPageState extends State<AdminPage> {
         ],
       ),
     );
-
     if (ok == true) {
-      // Supprimer de Firestore
       await FirebaseFirestore.instance
           .collection('teachers')
           .doc('teacher_$id')
           .delete();
-      // Supprimer de SQLite
       await DBService.deleteTeacher(id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -163,7 +368,7 @@ class _AdminPageState extends State<AdminPage> {
     }
   }
 
-  // ── Ajouter / Modifier ───────────────────────────────────
+  // ── Ajouter / Modifier professeur ───────────────────────
   Future<void> _openTeacherForm({Map<String, dynamic>? teacher}) async {
     final t = AppLocalizations.of(context)!;
     final isEdit = teacher != null;
@@ -176,6 +381,9 @@ class _AdminPageState extends State<AdminPage> {
     final expCtrl = TextEditingController(
       text: teacher?['years_of_experience']?.toString() ?? '',
     );
+
+    // École du nouveau prof = école filtrée actuellement
+    final targetSchool = _selectedSchool ?? _managedSchools.first;
 
     await showDialog(
       context: context,
@@ -195,6 +403,33 @@ class _AdminPageState extends State<AdminPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Info école cible
+              if (!isEdit)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.school, color: Colors.orange, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${targetSchool['name']} — ${targetSchool['city']}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               _field(fnCtrl, t.firstName, Icons.person),
               _field(lnCtrl, t.lastName, Icons.person_outline),
               _field(
@@ -253,8 +488,8 @@ class _AdminPageState extends State<AdminPage> {
                   lastName: lnCtrl.text.trim(),
                   email: emailCtrl.text.trim(),
                   phoneNumber: phoneCtrl.text.trim(),
-                  schoolName: widget.admin.schoolName,
-                  schoolCity: widget.admin.schoolCity,
+                  schoolName: targetSchool['name']!,
+                  schoolCity: targetSchool['city']!,
                   schoolRegion: widget.admin.schoolRegion,
                   role: 'teacher',
                   preferredLanguage: 'fr',
@@ -275,7 +510,6 @@ class _AdminPageState extends State<AdminPage> {
                     ).showSnackBar(SnackBar(content: Text(t.emailAlreadyUsed)));
                   return;
                 }
-                // Sync vers Firestore immédiatement
                 final saved = await DBService.getTeacherByEmail(newT.email);
                 if (saved != null) await FirestoreService.upsertTeacher(saved);
               }
@@ -291,32 +525,14 @@ class _AdminPageState extends State<AdminPage> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────
-  // BUILD
-  // ─────────────────────────────────────────────────────────
-  @override
-  void initState() {
-    super.initState();
-    _migrateSchoolKeys(); // migration one-time pour les docs existants
-  }
-
-  // Ajouter school_key aux docs Firestore qui n'en ont pas encore
-  // Migration globale : normalise TOUS les docs teachers sans filtre de casse
-  // Récupère tous les docs → compare school_name/city normalisés → corrige
+  // ── Migration school_keys ────────────────────────────────
   Future<void> _migrateSchoolKeys() async {
     try {
-      final adminSchoolNorm = widget.admin.schoolName.trim().toLowerCase();
-      final adminCityNorm = widget.admin.schoolCity.trim().toLowerCase();
-      final targetKey = adminSchoolNorm + '__' + adminCityNorm;
-
-      // Récupérer TOUS les teachers sans filtre pour trouver ceux à migrer
       final snap = await FirebaseFirestore.instance
           .collection('teachers')
           .get();
-
       final batch = FirebaseFirestore.instance.batch();
       int count = 0;
-
       for (final doc in snap.docs) {
         final data = doc.data();
         final rawName = (data['school_name'] as String? ?? '')
@@ -325,37 +541,70 @@ class _AdminPageState extends State<AdminPage> {
         final rawCity = (data['school_city'] as String? ?? '')
             .trim()
             .toLowerCase();
+        final docKey = '${rawName}__${rawCity}';
         final rawKey = data['school_key'] as String?;
-        final docKey = rawName + '__' + rawCity;
-
-        // Corriger si : même école (normalisée) OU school_key manquant
-        final sameSchool =
-            rawName == adminSchoolNorm && rawCity == adminCityNorm;
-        final needsKey = rawKey == null || rawKey.isEmpty;
-        final wrongKey = rawKey != docKey; // school_key ne correspond pas
-
-        if (sameSchool && (needsKey || wrongKey)) {
+        if (rawKey == null || rawKey.isEmpty || rawKey != docKey) {
           batch.update(doc.reference, {
-            'school_name': adminSchoolNorm,
-            'school_city': adminCityNorm,
-            'school_key': targetKey,
+            'school_name': rawName,
+            'school_city': rawCity,
+            'school_key': docKey,
           });
           count++;
         }
       }
+      if (count > 0) await batch.commit();
+    } catch (e) {}
+  }
 
-      if (count > 0) {
-        await batch.commit();
-        print('✅ Migration: ' + count.toString() + ' docs corrigés');
-      }
-    } catch (e) {
-      print('ℹ️ Migration silencieuse: ' + e.toString());
+  // ── Sync Firestore → SQLite ──────────────────────────────
+  void _syncToSQLite(List<Map<String, dynamic>> firestoreTeachers) {
+    for (final t in firestoreTeachers) {
+      final id = t['local_id'] as int? ?? t['id'] as int?;
+      if (id == null) continue;
+      DBService.updateTeacher(
+        teacherId: id,
+        data: {
+          'first_name': t['first_name'] ?? '',
+          'last_name': t['last_name'] ?? '',
+          'email': t['email'] ?? '',
+          'phone_number': t['phone_number'] ?? '',
+          'role': t['role'] ?? 'teacher',
+          'is_active': t['is_active'] ?? 1,
+          'deleted': t['deleted'] ?? 0,
+          'years_of_experience': t['years_of_experience'] ?? 0,
+          'school_name': (t['school_name'] as String? ?? '')
+              .toLowerCase()
+              .trim(),
+          'school_city': (t['school_city'] as String? ?? '')
+              .toLowerCase()
+              .trim(),
+          'synced': 1,
+        },
+      ).catchError((_) {});
     }
   }
 
+  // ── Filtre recherche ─────────────────────────────────────
+  List<Map<String, dynamic>> _searchFilter(List<Map<String, dynamic>> list) {
+    if (_search.isEmpty) return list;
+    final q = _search.toLowerCase();
+    return list.where((t) {
+      final name = '${t['first_name'] ?? ''} ${t['last_name'] ?? ''}'
+          .toLowerCase();
+      final email = (t['email'] ?? '').toLowerCase();
+      return name.contains(q) || email.contains(q);
+    }).toList();
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // BUILD
+  // ─────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
+    final schoolKeys = _managedSchools
+        .map((s) => '${s['name']}__${s['city']}')
+        .toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFFAF0E8),
@@ -371,27 +620,24 @@ class _AdminPageState extends State<AdminPage> {
         ),
         onPressed: () => _openTeacherForm(),
       ),
-      // ── Stream Firestore → rebuild automatique ────────────
       body: StreamBuilder<List<Map<String, dynamic>>>(
-        stream: FirestoreService.streamTeachersInSchool(widget.admin),
+        // ✅ Stream sur l'école filtrée OU toutes les écoles
+        stream: _selectedSchool != null
+            ? FirestoreService.streamTeachersInSchool(
+                widget.admin,
+                filterSchoolKey: _currentSchoolKey,
+              )
+            : FirestoreService.streamTeachersAllManagedSchools(widget.admin),
         builder: (context, snapshot) {
-          // ── États de chargement / erreur ──────────────────
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
               child: CircularProgressIndicator(color: Colors.orange),
             );
           }
-          if (snapshot.hasError) {
-            // Firestore inaccessible → fallback SQLite
-            return _buildWithSQLite(t);
-          }
+          if (snapshot.hasError) return _buildWithSQLite(t);
 
           final allTeachers = snapshot.data ?? [];
-
-          // Sync descendante : écrire les données Firestore dans SQLite
           _syncToSQLite(allTeachers);
-
-          // Filtrer par recherche
           final teachers = _searchFilter(allTeachers);
           final total = allTeachers.length;
           final active = allTeachers.where((t) => t['is_active'] == 1).length;
@@ -402,12 +648,13 @@ class _AdminPageState extends State<AdminPage> {
     );
   }
 
-  // ── Fallback SQLite si Firestore offline ─────────────────
+  // ── Fallback SQLite ──────────────────────────────────────
   Widget _buildWithSQLite(AppLocalizations t) {
     return FutureBuilder<List<Map<String, dynamic>>>(
-      future: DBService.getTeachersBySchool(
-        schoolName: widget.admin.schoolName!,
-        schoolCity: widget.admin.schoolCity!,
+      future: DBService.getTeachersForAdmin(
+        admin: widget.admin,
+        filterSchoolName: _selectedSchool?['name'],
+        filterSchoolCity: _selectedSchool?['city'],
       ),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
@@ -446,49 +693,6 @@ class _AdminPageState extends State<AdminPage> {
     );
   }
 
-  // ── Sync Firestore → SQLite en arrière-plan ──────────────
-  void _syncToSQLite(List<Map<String, dynamic>> firestoreTeachers) {
-    for (final t in firestoreTeachers) {
-      final id = t['local_id'] as int? ?? t['id'] as int?;
-      if (id == null) continue;
-      // Normaliser school pour cohérence locale
-      final schoolName = (t['school_name'] as String? ?? '')
-          .toLowerCase()
-          .trim();
-      final schoolCity = (t['school_city'] as String? ?? '')
-          .toLowerCase()
-          .trim();
-      DBService.updateTeacher(
-        teacherId: id,
-        data: {
-          'first_name': t['first_name'] ?? '',
-          'last_name': t['last_name'] ?? '',
-          'email': t['email'] ?? '',
-          'phone_number': t['phone_number'] ?? '',
-          'role': t['role'] ?? 'teacher',
-          'is_active': t['is_active'] ?? 1,
-          'deleted': t['deleted'] ?? 0,
-          'years_of_experience': t['years_of_experience'] ?? 0,
-          'school_name': schoolName,
-          'school_city': schoolCity,
-          'synced': 1,
-        },
-      ).catchError((_) {}); // silencieux
-    }
-  }
-
-  // ── Filtre recherche ─────────────────────────────────────
-  List<Map<String, dynamic>> _searchFilter(List<Map<String, dynamic>> list) {
-    if (_search.isEmpty) return list;
-    final q = _search.toLowerCase();
-    return list.where((t) {
-      final name = '${t['first_name'] ?? ''} ${t['last_name'] ?? ''}'
-          .toLowerCase();
-      final email = (t['email'] ?? '').toLowerCase();
-      return name.contains(q) || email.contains(q);
-    }).toList();
-  }
-
   // ─────────────────────────────────────────────────────────
   // BODY
   // ─────────────────────────────────────────────────────────
@@ -504,9 +708,12 @@ class _AdminPageState extends State<AdminPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(t, total, active),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          // ✅ Filtre par école
+          _buildSchoolFilter(),
+          const SizedBox(height: 12),
           _buildSearchBar(t),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           if (teachers.isEmpty)
             _buildEmpty(t)
           else
@@ -519,6 +726,10 @@ class _AdminPageState extends State<AdminPage> {
 
   // ── Header ───────────────────────────────────────────────
   Widget _buildHeader(AppLocalizations t, int total, int active) {
+    final schoolLabel = _selectedSchool != null
+        ? '${_selectedSchool!['name']} — ${_selectedSchool!['city']}'
+        : 'Toutes les écoles (${_managedSchools.length})';
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -539,21 +750,60 @@ class _AdminPageState extends State<AdminPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Ligne 1 : nom école ──
-          Text(
-            widget.admin.schoolName,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Text(
-            widget.admin.schoolCity,
-            style: const TextStyle(color: Colors.white60, fontSize: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      schoolLabel,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      '${_managedSchools.length} école${_managedSchools.length > 1 ? "s" : ""} gérée${_managedSchools.length > 1 ? "s" : ""}',
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // ✅ Bouton gérer les écoles
+              GestureDetector(
+                onTap: _showManageSchoolsSheet,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white30),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.business, color: Colors.white, size: 14),
+                      SizedBox(width: 4),
+                      Text(
+                        'Gérer',
+                        style: TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
-          // ── Stats : profs + actifs + élèves ──
           Row(
             children: [
               _statBlock(
@@ -570,6 +820,303 @@ class _AdminPageState extends State<AdminPage> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Filtre écoles (chips) ─────────────────────────────────
+  Widget _buildSchoolFilter() {
+    if (_managedSchools.length <= 1) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 36,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          // Chip "Toutes"
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedSchool = null),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: _selectedSchool == null ? Colors.orange : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: _selectedSchool == null
+                        ? Colors.orange
+                        : Colors.orange.shade200,
+                  ),
+                  boxShadow: _selectedSchool == null
+                      ? [
+                          BoxShadow(
+                            color: Colors.orange.withOpacity(0.3),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : [],
+                ),
+                child: Text(
+                  'Toutes (${_managedSchools.length})',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: _selectedSchool == null
+                        ? Colors.white
+                        : Colors.orange,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Chip par école
+          ..._managedSchools.map((school) {
+            final isSelected =
+                _selectedSchool?['name'] == school['name'] &&
+                _selectedSchool?['city'] == school['city'];
+            final isPrimary =
+                school['name'] ==
+                    widget.admin.schoolName.trim().toLowerCase() &&
+                school['city'] == widget.admin.schoolCity.trim().toLowerCase();
+
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: GestureDetector(
+                onTap: () => setState(() => _selectedSchool = school),
+                onLongPress: isPrimary
+                    ? null
+                    : () => _removeManagedSchool(school),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFF5D4037) : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected
+                          ? const Color(0xFF5D4037)
+                          : Colors.brown.shade200,
+                    ),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: const Color(0xFF5D4037).withOpacity(0.3),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : [],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isPrimary ? Icons.star : Icons.school,
+                        size: 11,
+                        color: isSelected
+                            ? Colors.white
+                            : const Color(0xFF5D4037),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${school['name']} · ${school['city']}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isSelected
+                              ? Colors.white
+                              : const Color(0xFF5D4037),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+          // Bouton "+"
+          GestureDetector(
+            onTap: _addManagedSchool,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.green.shade300),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add, size: 14, color: Colors.green.shade700),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Ajouter',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Bottom sheet gérer les écoles ─────────────────────────
+  void _showManageSchoolsSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const Text(
+                'Écoles gérées',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              // Liste des écoles
+              ..._managedSchools.map((school) {
+                final isPrimary =
+                    school['name'] ==
+                        widget.admin.schoolName.trim().toLowerCase() &&
+                    school['city'] ==
+                        widget.admin.schoolCity.trim().toLowerCase();
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isPrimary
+                        ? Colors.orange.shade50
+                        : Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isPrimary
+                          ? Colors.orange.shade200
+                          : Colors.grey.shade200,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isPrimary ? Icons.star : Icons.school,
+                        color: isPrimary ? Colors.orange : Colors.brown,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              school['name'] ?? '',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              school['city'] ?? '',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.black45,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (isPrimary)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade100,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Text(
+                            'Principale',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.orange,
+                            ),
+                          ),
+                        )
+                      else
+                        IconButton(
+                          icon: const Icon(
+                            Icons.remove_circle_outline,
+                            color: Colors.red,
+                          ),
+                          onPressed: () async {
+                            Navigator.pop(ctx);
+                            await _removeManagedSchool(school);
+                          },
+                        ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 8),
+              // Bouton ajouter
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.orange),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  icon: const Icon(Icons.add_business, color: Colors.orange),
+                  label: const Text(
+                    'Ajouter une école',
+                    style: TextStyle(color: Colors.orange),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _addManagedSchool();
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -609,7 +1156,6 @@ class _AdminPageState extends State<AdminPage> {
     );
   }
 
-  // ── Recherche ────────────────────────────────────────────
   Widget _buildSearchBar(AppLocalizations t) {
     return TextField(
       onChanged: (v) => setState(() => _search = v),
@@ -635,7 +1181,6 @@ class _AdminPageState extends State<AdminPage> {
     );
   }
 
-  // ── Carte professeur ─────────────────────────────────────
   Widget _buildTeacherCard(AppLocalizations t, Map<String, dynamic> teacher) {
     final id = teacher['local_id'] as int? ?? teacher['id'] as int? ?? 0;
     final fullName =
@@ -645,14 +1190,13 @@ class _AdminPageState extends State<AdminPage> {
     final role = teacher['role'] as String? ?? 'teacher';
     final initials = fullName.isNotEmpty ? fullName[0].toUpperCase() : '?';
     final isAdmin = role == 'admin' || role == 'super_admin';
+    final schoolName = teacher['school_name'] as String? ?? '';
+    final schoolCity = teacher['school_city'] as String? ?? '';
 
     return FutureBuilder<Map<String, dynamic>>(
       future: DBService.getTeacherStats(id),
       builder: (ctx, statsSnap) {
         final stats = statsSnap.data ?? {'classes': 0, 'students': 0};
-        final nbClass = stats['classes'] ?? 0;
-        final nbEleves = stats['students'] ?? 0;
-
         return Card(
           margin: const EdgeInsets.only(bottom: 10),
           shape: RoundedRectangleBorder(
@@ -711,7 +1255,7 @@ class _AdminPageState extends State<AdminPage> {
                   spacing: 6,
                   runSpacing: 4,
                   children: [
-                    // École + ville
+                    // ✅ Badge école (utile si multi-école)
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 7,
@@ -722,7 +1266,7 @@ class _AdminPageState extends State<AdminPage> {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        '🏫 ${(teacher['school_name'] ?? '').toString()} — ${(teacher['school_city'] ?? '').toString()}',
+                        '🏫 $schoolName — $schoolCity',
                         style: TextStyle(
                           fontSize: 10,
                           color: Colors.orange.shade800,
@@ -731,7 +1275,6 @@ class _AdminPageState extends State<AdminPage> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    // Badge admin
                     if (isAdmin)
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -744,16 +1287,15 @@ class _AdminPageState extends State<AdminPage> {
                         ),
                         child: Text(
                           role == 'super_admin' ? '👑 Super' : '🔑 Admin',
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 10,
-                            color: const Color(0xFF5D4037),
+                            color: Color(0xFF5D4037),
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
-                    // Stats classes / élèves
                     Text(
-                      '📚 $nbClass  👦 $nbEleves',
+                      '📚 ${stats['classes']}  👦 ${stats['students']}',
                       style: const TextStyle(
                         fontSize: 10,
                         color: Colors.black45,
@@ -836,10 +1378,10 @@ class _AdminPageState extends State<AdminPage> {
         padding: const EdgeInsets.all(40),
         child: Column(
           children: [
-            Icon(
+            const Icon(
               Icons.people_outline,
               size: 64,
-              color: const Color(0xFFD7B896),
+              color: Color(0xFFD7B896),
             ),
             const SizedBox(height: 16),
             Text(
@@ -872,256 +1414,6 @@ class _AdminPageState extends State<AdminPage> {
           filled: !enabled,
           fillColor: enabled ? null : Colors.grey.shade100,
         ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════
-// PAGE 2 : Classes du professeur
-// ═══════════════════════════════════════════════════════════
-class AdminTeacherClassesPage extends StatefulWidget {
-  final Teacher admin;
-  final Map<String, dynamic> teacher;
-  const AdminTeacherClassesPage({
-    super.key,
-    required this.admin,
-    required this.teacher,
-  });
-
-  @override
-  State<AdminTeacherClassesPage> createState() =>
-      _AdminTeacherClassesPageState();
-}
-
-class _AdminTeacherClassesPageState extends State<AdminTeacherClassesPage> {
-  late Future<List<Map<String, dynamic>>> futureClasses;
-
-  @override
-  void initState() {
-    super.initState();
-    futureClasses = DBService.getClassesByTeacherInSchool(
-      teacherId: widget.teacher['id'] as int,
-      schoolName: widget.admin.schoolName!,
-      schoolCity: widget.admin.schoolCity!,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final t = AppLocalizations.of(context)!;
-    final fullName =
-        '${widget.teacher['first_name']} ${widget.teacher['last_name'] ?? ''}'
-            .trim();
-    return Scaffold(
-      backgroundColor: const Color(0xFFFAF0E8),
-      appBar: AppBar(
-        backgroundColor: Colors.orange,
-        title: Text('$fullName — ${t.myClasses}'),
-      ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: futureClasses,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting)
-            return const Center(
-              child: CircularProgressIndicator(color: Colors.orange),
-            );
-          final classes = snap.data ?? [];
-          if (classes.isEmpty) return Center(child: Text(t.noClasses));
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: classes.length,
-            itemBuilder: (context, i) {
-              final c = classes[i];
-              return Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: ListTile(
-                  leading: const Icon(Icons.class_, color: Colors.orange),
-                  title: Text(c['name'] ?? t.myClasses),
-                  subtitle: Text('${t.level} : ${c['level'] ?? '-'}'),
-                  trailing: const Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Colors.orange,
-                  ),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => AdminClassStudentsPage(
-                        admin: widget.admin,
-                        classData: c,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════
-// PAGE 3 : Élèves d'une classe
-// ═══════════════════════════════════════════════════════════
-class AdminClassStudentsPage extends StatefulWidget {
-  final Teacher admin;
-  final Map<String, dynamic> classData;
-  const AdminClassStudentsPage({
-    super.key,
-    required this.admin,
-    required this.classData,
-  });
-
-  @override
-  State<AdminClassStudentsPage> createState() => _AdminClassStudentsPageState();
-}
-
-class _AdminClassStudentsPageState extends State<AdminClassStudentsPage> {
-  late Future<List<Map<String, dynamic>>> futureStudents;
-
-  @override
-  void initState() {
-    super.initState();
-    _refresh();
-  }
-
-  void _refresh() {
-    futureStudents = DBService.getStudentsByClassInSchool(
-      classId: widget.classData['id'] as int,
-      schoolName: widget.admin.schoolName!,
-      schoolCity: widget.admin.schoolCity!,
-    );
-    setState(() {});
-  }
-
-  Future<void> _deleteStudent(Map<String, dynamic> s) async {
-    final t = AppLocalizations.of(context)!;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.red),
-            SizedBox(width: 10),
-            Text('Supprimer', style: TextStyle(fontSize: 17)),
-          ],
-        ),
-        content: Text(
-          'Supprimer ${s['first_name'] ?? ''} définitivement ?',
-          style: const TextStyle(fontWeight: FontWeight.w500),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.cancel),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.delete, style: const TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) {
-      // Supprimer Firestore + SQLite
-      await FirebaseFirestore.instance
-          .collection('children')
-          .doc('child_${s['id']}')
-          .delete();
-      await DBService.deleteStudent(s['id'] as int);
-      _refresh();
-    }
-  }
-
-  Color _riskColor(String? r) {
-    switch (r) {
-      case 'green':
-        return Colors.green;
-      case 'orange':
-        return Colors.orange;
-      case 'red':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final t = AppLocalizations.of(context)!;
-    return Scaffold(
-      backgroundColor: const Color(0xFFFAF0E8),
-      appBar: AppBar(
-        backgroundColor: Colors.orange,
-        title: Text('${t.students} — ${widget.classData['name'] ?? ''}'),
-      ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: futureStudents,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting)
-            return const Center(
-              child: CircularProgressIndicator(color: Colors.orange),
-            );
-          final students = snap.data ?? [];
-          if (students.isEmpty) return Center(child: Text(t.noStudents));
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: students.length,
-            itemBuilder: (context, i) {
-              final s = students[i];
-              final fullName =
-                  '${s['first_name'] ?? ''} ${s['last_name'] ?? ''}'.trim();
-              final risk = s['latest_overall_risk_level'] as String?;
-              return Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  leading: CircleAvatar(
-                    backgroundColor: _riskColor(risk).withOpacity(0.15),
-                    child: Icon(
-                      s['gender'] == 'girl' ? Icons.face_3 : Icons.face,
-                      color: _riskColor(risk),
-                    ),
-                  ),
-                  title: Text(
-                    fullName.isEmpty ? t.students : fullName,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Text(
-                    'Code: ${s['child_code'] ?? '-'}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    onPressed: () => _deleteStudent(s),
-                    tooltip: t.delete,
-                  ),
-                ),
-              );
-            },
-          );
-        },
       ),
     );
   }

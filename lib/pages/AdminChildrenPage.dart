@@ -1,7 +1,11 @@
+// ============================================================
+// AdminChildrenPage.dart — lib/pages/AdminChildrenPage.dart
+// Multi-école : filtre par école + vue toutes écoles
+// ============================================================
+
 import 'package:flutter/material.dart';
 import '../models/teachers.dart';
 import '../services/db_service.dart';
-import '../l10n/app_localizations.dart';
 import '../services/export_service.dart';
 
 class AdminChildrenPage extends StatefulWidget {
@@ -20,24 +24,37 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
   String _exportMsg = '';
   String _search = '';
 
+  // ✅ École sélectionnée (null = toutes)
+  Map<String, String>? _selectedSchool;
+  List<Map<String, String>> _managedSchools = [];
+
   @override
   void initState() {
     super.initState();
+    _managedSchools = widget.admin.allManagedSchools;
     _load();
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final data = await DBService.getAllChildrenWithDetails(
-      schoolName: widget.admin.schoolName!,
-      schoolCity: widget.admin.schoolCity!,
+    final data = await DBService.getAllChildrenForAdmin(
+      admin: widget.admin,
+      filterSchoolName: _selectedSchool?['name'],
+      filterSchoolCity: _selectedSchool?['city'],
     );
-    if (mounted)
+    if (mounted) {
       setState(() {
         _all = data;
         _filtered = data;
         _loading = false;
       });
+    }
+  }
+
+  // ── Changer l'école filtrée ──────────────────────────────
+  void _selectSchool(Map<String, String>? school) {
+    setState(() => _selectedSchool = school);
+    _load();
   }
 
   Future<void> _export() async {
@@ -52,6 +69,9 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
       onProgress: (msg) {
         if (mounted) setState(() => _exportMsg = msg);
       },
+      // ✅ Passer le filtre école actuel (null = toutes les écoles)
+      filterSchoolName: _selectedSchool?['name'],
+      filterSchoolCity: _selectedSchool?['city'],
     );
 
     if (!mounted) return;
@@ -97,7 +117,11 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
           final prof =
               '${c['teacher_first_name'] ?? ''} ${c['teacher_last_name'] ?? ''}'
                   .toLowerCase();
-          return name.contains(lower) || prof.contains(lower);
+          final school = '${c['_school_name'] ?? ''} ${c['_school_city'] ?? ''}'
+              .toLowerCase();
+          return name.contains(lower) ||
+              prof.contains(lower) ||
+              school.contains(lower);
         }).toList();
       }
     });
@@ -130,8 +154,15 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
     }
   }
 
+  // ─────────────────────────────────────────────────────────
+  // BUILD
+  // ─────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final schoolLabel = _selectedSchool != null
+        ? '${_selectedSchool!['name']} — ${_selectedSchool!['city']}'
+        : 'Tous les élèves';
+
     return Scaffold(
       backgroundColor: const Color(0xFFFAF0E8),
       appBar: AppBar(
@@ -139,13 +170,14 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Tous les élèves',
-              style: TextStyle(
+            Text(
+              schoolLabel,
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
-                fontSize: 16,
+                fontSize: 15,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
             Text(
               _search.isEmpty
@@ -158,8 +190,8 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           _exporting
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14),
                   child: Center(
                     child: SizedBox(
                       width: 20,
@@ -246,6 +278,10 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
                 ],
               ),
             ),
+
+          // ✅ Filtre par école (si multi-école)
+          if (_managedSchools.length > 1) _buildSchoolFilter(),
+
           Expanded(
             child: _loading
                 ? const Center(
@@ -259,7 +295,7 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
                         child: TextField(
                           onChanged: _filter,
                           decoration: InputDecoration(
-                            hintText: 'Rechercher...',
+                            hintText: 'Rechercher élève, prof, école...',
                             prefixIcon: const Icon(
                               Icons.search,
                               color: Colors.orange,
@@ -276,6 +312,8 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
                           ),
                         ),
                       ),
+                      // ── Stats rapides ──
+                      if (!_loading && _all.isNotEmpty) _buildQuickStats(),
                       // ── Liste ──
                       Expanded(
                         child: _filtered.isEmpty
@@ -319,6 +357,167 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
     );
   }
 
+  // ── Filtre écoles (chips horizontaux) ────────────────────
+  Widget _buildSchoolFilter() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: SizedBox(
+        height: 34,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            // "Toutes"
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: GestureDetector(
+                onTap: () => _selectSchool(null),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _selectedSchool == null
+                        ? Colors.orange
+                        : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: _selectedSchool == null
+                          ? Colors.orange
+                          : Colors.grey.shade300,
+                    ),
+                  ),
+                  child: Text(
+                    'Toutes (${_managedSchools.length})',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: _selectedSchool == null
+                          ? Colors.white
+                          : Colors.black54,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // Une chip par école
+            ..._managedSchools.map((school) {
+              final isSelected =
+                  _selectedSchool?['name'] == school['name'] &&
+                  _selectedSchool?['city'] == school['city'];
+              final isPrimary =
+                  school['name'] ==
+                      widget.admin.schoolName.trim().toLowerCase() &&
+                  school['city'] ==
+                      widget.admin.schoolCity.trim().toLowerCase();
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: GestureDetector(
+                  onTap: () => _selectSchool(school),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFF5D4037)
+                          : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected
+                            ? const Color(0xFF5D4037)
+                            : Colors.grey.shade300,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isPrimary ? Icons.star : Icons.school,
+                          size: 10,
+                          color: isSelected ? Colors.white : Colors.brown,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${school['name']} · ${school['city']}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: isSelected ? Colors.white : Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Stats rapides (risques) ──────────────────────────────
+  Widget _buildQuickStats() {
+    int green = 0, orange = 0, red = 0, none = 0;
+    for (final c in _all) {
+      switch (c['latest_overall_risk_level']) {
+        case 'green':
+          green++;
+          break;
+        case 'orange':
+          orange++;
+          break;
+        case 'red':
+          red++;
+          break;
+        default:
+          none++;
+          break;
+      }
+    }
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade100),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _statChip('🟢', green, 'Faible'),
+          _statChip('🟠', orange, 'Moyen'),
+          _statChip('🔴', red, 'Élevé'),
+          _statChip('⚪', none, 'N/A'),
+        ],
+      ),
+    );
+  }
+
+  Widget _statChip(String emoji, int count, String label) {
+    return Column(
+      children: [
+        Text(
+          '$emoji $count',
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+        ),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: Colors.black45),
+        ),
+      ],
+    );
+  }
+
+  // ── Carte élève ──────────────────────────────────────────
   Widget _card(Map<String, dynamic> c) {
     final fn = c['first_name'] as String? ?? '';
     final ln = c['last_name'] as String? ?? '';
@@ -331,6 +530,10 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
     final prof = '$tf $tl'.trim();
     final risk = c['latest_overall_risk_level'] as String?;
     final init = fn.isNotEmpty ? fn[0].toUpperCase() : '?';
+
+    // ✅ Nom de l'école (pour mode "toutes les écoles")
+    final schoolName = c['_school_name'] as String?;
+    final showSchool = _selectedSchool == null && _managedSchools.length > 1;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -385,6 +588,13 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
               style: const TextStyle(fontSize: 11, color: Colors.black45),
               overflow: TextOverflow.ellipsis,
             ),
+            // ✅ Afficher l'école si mode "toutes"
+            if (showSchool && schoolName != null)
+              Text(
+                '🏫 $schoolName',
+                style: TextStyle(fontSize: 10, color: Colors.orange.shade700),
+                overflow: TextOverflow.ellipsis,
+              ),
           ],
         ),
         trailing: const Icon(Icons.chevron_right, color: Colors.black26),
@@ -392,6 +602,7 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
     );
   }
 
+  // ── Détail élève ─────────────────────────────────────────
   void _detail(Map<String, dynamic> c) {
     final fn = c['first_name'] as String? ?? '';
     final ln = c['last_name'] as String? ?? '';
@@ -405,6 +616,8 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
     final risk = c['latest_overall_risk_level'] as String?;
     final code = c['child_code'] as String? ?? '—';
     final gender = c['gender'] as String? ?? 'boy';
+    final schoolName = c['_school_name'] as String? ?? '';
+    final schoolCity = c['_school_city'] as String? ?? '';
 
     String riskLabel;
     switch (risk) {
@@ -435,7 +648,6 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Handle
             Container(
               width: 36,
               height: 4,
@@ -445,7 +657,6 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
                 borderRadius: BorderRadius.circular(4),
               ),
             ),
-            // Avatar
             CircleAvatar(
               radius: 36,
               backgroundColor: Colors.orange.shade100,
@@ -468,12 +679,13 @@ class _AdminChildrenPageState extends State<AdminChildrenPage> {
               style: const TextStyle(color: Colors.black45, fontSize: 13),
             ),
             const SizedBox(height: 20),
-            // Détails en liste simple
             _row(Icons.class_, 'Classe', cls),
             _row(Icons.school, 'Niveau', lvl),
             _row(Icons.person, 'Professeur', prof),
             _row(Icons.qr_code, 'Code', code),
             _row(Icons.circle_outlined, 'Risque', riskLabel),
+            if (schoolName.isNotEmpty)
+              _row(Icons.business, 'École', '$schoolName — $schoolCity'),
           ],
         ),
       ),

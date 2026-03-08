@@ -1,6 +1,12 @@
+// ============================================================
+// db_service.dart — lib/services/db_service.dart
+// v3 : ajout managed_schools dans teachers + queries multi-écoles
+// ============================================================
+
 import 'package:sqflite/sqflite.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:path/path.dart';
+import 'dart:convert';
 import '../models/teachers.dart';
 
 class DBService {
@@ -16,7 +22,7 @@ class DBService {
     final path = join(await getDatabasesPath(), 'kindi.db');
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -24,74 +30,64 @@ class DBService {
 
   static Future<void> _onUpgrade(Database db, int oldV, int newV) async {
     if (oldV < 2) {
-      // ✅ Recréer la table teachers sans contrainte CHECK stricte sur role
-      // SQLite ne supporte pas ALTER COLUMN → on renomme, recrée, copie
       try {
         await db.execute('ALTER TABLE teachers RENAME TO teachers_old');
-        await db.execute('''
-          CREATE TABLE teachers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            first_name TEXT NOT NULL,
-            last_name TEXT,
-            email TEXT UNIQUE NOT NULL,
-            phone_number TEXT,
-            school_name TEXT NOT NULL,
-            school_city TEXT NOT NULL,
-            school_region TEXT,
-            role TEXT NOT NULL DEFAULT 'teacher',
-            preferred_language TEXT,
-            years_of_experience INTEGER,
-            grade_level TEXT,
-            password_hash TEXT NOT NULL,
-            is_active INTEGER DEFAULT 1,
-            synced INTEGER DEFAULT 1,
-            deleted INTEGER DEFAULT 0,
-            created_at TEXT,
-            updated_at TEXT
-          )
-        ''');
+        await db.execute(_teachersCreateSQL());
         await db.execute('''
           INSERT INTO teachers SELECT
             id, first_name, last_name, email, phone_number,
             school_name, school_city, school_region, role,
             preferred_language, years_of_experience, grade_level,
-            password_hash, is_active, synced, deleted, created_at, updated_at
+            password_hash, is_active, synced, deleted, created_at, updated_at,
+            NULL
           FROM teachers_old
         ''');
         await db.execute('DROP TABLE teachers_old');
         print('✅ Migration v2 : contrainte role supprimée');
       } catch (e) {
-        print('⚠️ Migration v2 error: \$e');
+        print('⚠️ Migration v2 error: $e');
+      }
+    }
+    if (oldV < 3) {
+      // ✅ Migration v3 : ajouter colonne managed_schools
+      try {
+        await db.execute(
+          'ALTER TABLE teachers ADD COLUMN managed_schools TEXT',
+        );
+        print('✅ Migration v3 : colonne managed_schools ajoutée');
+      } catch (e) {
+        print('ℹ️ Migration v3 (déjà présente ?): $e');
       }
     }
   }
 
-  static Future<void> _onCreate(Database db, int version) async {
-    // ===== TABLE TEACHERS =====
-    await db.execute('''
-      CREATE TABLE teachers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        first_name TEXT NOT NULL,
-        last_name TEXT,
-        email TEXT UNIQUE NOT NULL,
-        phone_number TEXT,
-        school_name TEXT NOT NULL,
-        school_city TEXT NOT NULL,
-        school_region TEXT,
-        role TEXT NOT NULL CHECK(role IN ('teacher','admin','super_admin','researcher')),
-        preferred_language TEXT CHECK(preferred_language IN ('ar','fr','en')),
-        years_of_experience INTEGER,
-        grade_level TEXT,
-        password_hash TEXT NOT NULL,
-        is_active INTEGER DEFAULT 1,
-        synced INTEGER DEFAULT 1,
-        deleted INTEGER DEFAULT 0,
-        created_at TEXT,
-        updated_at TEXT
-      );
-    ''');
+  static String _teachersCreateSQL() => '''
+    CREATE TABLE teachers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      first_name TEXT NOT NULL,
+      last_name TEXT,
+      email TEXT UNIQUE NOT NULL,
+      phone_number TEXT,
+      school_name TEXT NOT NULL,
+      school_city TEXT NOT NULL,
+      school_region TEXT,
+      role TEXT NOT NULL DEFAULT 'teacher',
+      preferred_language TEXT,
+      years_of_experience INTEGER,
+      grade_level TEXT,
+      password_hash TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1,
+      synced INTEGER DEFAULT 1,
+      deleted INTEGER DEFAULT 0,
+      created_at TEXT,
+      updated_at TEXT,
+      managed_schools TEXT
+    )
+  ''';
 
-    // ===== TABLE CLASSES =====
+  static Future<void> _onCreate(Database db, int version) async {
+    await db.execute(_teachersCreateSQL());
+
     await db.execute('''
       CREATE TABLE classes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,7 +96,7 @@ class DBService {
         school_name TEXT,
         school_city TEXT,
         academic_year TEXT,
-        shift TEXT CHECK(shift IN ('morning','afternoon','full')),
+        shift TEXT,
         notes TEXT,
         synced INTEGER DEFAULT 1,
         deleted INTEGER DEFAULT 0,
@@ -109,30 +105,28 @@ class DBService {
       );
     ''');
 
-    // ===== TABLE CLASS_TEACHERS =====
     await db.execute('''
       CREATE TABLE class_teachers (
         id INTEGER PRIMARY KEY,
         class_id INTEGER NOT NULL,
         teacher_id INTEGER NOT NULL,
-        role TEXT CHECK(role IN ('main','co')),
+        role TEXT,
         FOREIGN KEY(class_id) REFERENCES classes(id),
         FOREIGN KEY(teacher_id) REFERENCES teachers(id)
       );
     ''');
 
-    // ===== TABLE CHILDREN =====
     await db.execute('''
       CREATE TABLE children (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         child_code TEXT UNIQUE,
         first_name TEXT NOT NULL,
         last_name TEXT,
-        gender TEXT CHECK(gender IN ('boy','girl')),
+        gender TEXT,
         birth_date TEXT,
         class_id INTEGER NOT NULL,
         main_teacher_id INTEGER NOT NULL,
-        latest_overall_risk_level TEXT CHECK(latest_overall_risk_level IN ('green','orange','red')),
+        latest_overall_risk_level TEXT,
         latest_observation_date TEXT,
         notes TEXT,
         synced INTEGER DEFAULT 1,
@@ -144,11 +138,10 @@ class DBService {
       );
     ''');
 
-    // ===== TABLE CHECKLIST_QUESTIONS =====
     await db.execute('''
       CREATE TABLE checklist_questions (
         id INTEGER PRIMARY KEY,
-        domain TEXT CHECK(domain IN ('inattention','hyperactivity_impulsivity','self_regulation_social')),
+        domain TEXT,
         order_index INTEGER,
         text_ar TEXT,
         text_fr TEXT,
@@ -162,7 +155,6 @@ class DBService {
       );
     ''');
 
-    // ===== TABLE OBSERVATIONS =====
     await db.execute('''
       CREATE TABLE observations (
         id INTEGER PRIMARY KEY,
@@ -180,7 +172,7 @@ class DBService {
         hyperactivity_percent REAL,
         selfreg_social_percent REAL,
         total_percent REAL,
-        overall_risk_level TEXT CHECK(overall_risk_level IN ('green','orange','red')),
+        overall_risk_level TEXT,
         synced INTEGER DEFAULT 1,
         deleted INTEGER DEFAULT 0,
         created_at TEXT,
@@ -191,13 +183,12 @@ class DBService {
       );
     ''');
 
-    // ===== TABLE OBSERVATION_ANSWERS =====
     await db.execute('''
       CREATE TABLE observation_answers (
         id INTEGER PRIMARY KEY,
         observation_id INTEGER NOT NULL,
         question_id INTEGER NOT NULL,
-        numeric_value INTEGER CHECK(numeric_value IN (0,1,2)),
+        numeric_value INTEGER,
         label TEXT,
         synced INTEGER DEFAULT 1,
         deleted INTEGER DEFAULT 0,
@@ -208,7 +199,6 @@ class DBService {
       );
     ''');
 
-    // ===== INDEXES =====
     await db.execute('CREATE INDEX idx_children_class ON children(class_id);');
     await db.execute(
       'CREATE INDEX idx_observations_child ON observations(child_id);',
@@ -235,7 +225,7 @@ class DBService {
       );
       return true;
     } catch (e) {
-      return false; // email déjà utilisé
+      return false;
     }
   }
 
@@ -245,27 +235,17 @@ class DBService {
     required String passwordHash,
   }) async {
     final db = await database;
-
     final result = await db.query(
       'teachers',
-      where: '''
-        email = ?
-        AND password_hash = ?
-        AND is_active = 1
-        AND deleted = 0
-      ''',
+      where:
+          'email = ? AND password_hash = ? AND is_active = 1 AND deleted = 0',
       whereArgs: [email, passwordHash],
       limit: 1,
     );
-
-    if (result.isNotEmpty) {
-      return Teacher.fromMap(result.first);
-    }
+    if (result.isNotEmpty) return Teacher.fromMap(result.first);
     return null;
   }
 
-  // ===== GET TEACHER BY EMAIL (sans vérifier password) =====
-  // Utilisé pour mettre à jour le hash après reset password Firebase
   static Future<Teacher?> getTeacherByEmail(String email) async {
     final db = await database;
     final result = await db.query(
@@ -278,46 +258,55 @@ class DBService {
     return null;
   }
 
-  // ===== UPDATE PASSWORD HASH =====
-  // Appelé après reset password Firebase pour synchroniser SQLite
   static Future<void> updatePasswordHash({
     required String email,
     required String newPasswordHash,
   }) async {
     final db = await database;
-    final now = DateTime.now().toIso8601String();
     await db.update(
       'teachers',
       {
         'password_hash': newPasswordHash,
-        'synced': 0, // re-sync vers Firestore
-        'updated_at': now,
+        'synced': 0,
+        'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'email = ? AND deleted = 0',
       whereArgs: [email],
     );
-    print('✅ Password hash mis à jour dans SQLite pour $email');
   }
 
-  // ===== GET CLASSES OF TEACHER =====
+  // ===== UPDATE MANAGED SCHOOLS (SQLite) =====
+  static Future<void> updateManagedSchools({
+    required int adminId,
+    required List<Map<String, String>> schools,
+  }) async {
+    final db = await database;
+    await db.update(
+      'teachers',
+      {
+        'managed_schools': jsonEncode(schools),
+        'synced': 0,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [adminId],
+    );
+  }
+
+  // ===== GET CLASSES =====
   static Future<List<Map<String, dynamic>>> getClassesByTeacher(
     int teacherId,
   ) async {
     final db = await database;
-
-    final result = await db.rawQuery(
+    return await db.rawQuery(
       '''
-    SELECT c.*
-    FROM classes c
-    INNER JOIN class_teachers ct ON ct.class_id = c.id
-    WHERE ct.teacher_id = ?
-      AND c.deleted = 0
-    ORDER BY c.name ASC
-  ''',
+      SELECT c.* FROM classes c
+      INNER JOIN class_teachers ct ON ct.class_id = c.id
+      WHERE ct.teacher_id = ? AND c.deleted = 0
+      ORDER BY c.name ASC
+    ''',
       [teacherId],
     );
-
-    return result;
   }
 
   static Future<List<Map<String, dynamic>>> getStudentsByClass(
@@ -325,14 +314,14 @@ class DBService {
   ) async {
     final db = await database;
     return await db.query(
-      'children', // ⚠️ حسب عندك اسم الجدول: children
+      'children',
       where: 'class_id = ? AND deleted = 0',
       whereArgs: [classId],
       orderBy: 'first_name ASC',
     );
   }
 
-  // ===== INSERT STUDENT (CHILD) =====
+  // ===== INSERT STUDENT =====
   static Future<void> insertStudent({
     required String firstName,
     String? lastName,
@@ -352,21 +341,20 @@ class DBService {
       'class_id': classId,
       'main_teacher_id': mainTeacherId,
       'latest_overall_risk_level': riskLevel,
-      'synced': 0, // ✅ Fix : 0 pour que SyncEngine l'envoie
+      'synced': 0,
       'deleted': 0,
       'created_at': now,
       'updated_at': now,
     });
   }
 
-  // Marquer comme archivé (deleted = 1)
   static Future<void> archiveStudent(int id) async {
     final db = await database;
     await db.update(
       'children',
       {
         'deleted': 1,
-        'synced': 0, // ✅ sera supprimé dans Firestore au prochain sync
+        'synced': 0,
         'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',
@@ -374,11 +362,8 @@ class DBService {
     );
   }
 
-  // Supprimer définitivement (SQLite + Firestore)
   static Future<void> deleteStudent(int id) async {
     final db = await database;
-
-    // 1) Récupérer le child_code pour supprimer dans Firestore
     final rows = await db.query(
       'children',
       columns: ['id', 'child_code'],
@@ -386,21 +371,16 @@ class DBService {
       whereArgs: [id],
       limit: 1,
     );
-
-    // 2) Supprimer dans SQLite
     await db.delete('children', where: 'id = ?', whereArgs: [id]);
-
-    // 3) Supprimer dans Firestore
     if (rows.isNotEmpty) {
       final childCode = rows.first['child_code']?.toString();
       final docId = childCode ?? 'child_$id';
       try {
-        final fs = FirebaseFirestore.instance;
-        // Essayer par child_code d'abord
-        await fs.collection('children').doc(docId).delete();
-      } catch (e) {
-        print('ℹ️ Suppression Firestore enfant: $e');
-      }
+        await FirebaseFirestore.instance
+            .collection('children')
+            .doc(docId)
+            .delete();
+      } catch (e) {}
     }
   }
 
@@ -408,7 +388,6 @@ class DBService {
     int classId,
   ) async {
     final db = await database;
-
     return await db.query(
       'children',
       where: 'class_id = ? AND deleted = 1',
@@ -427,27 +406,22 @@ class DBService {
     );
   }
 
-  // ===== GET ONE STUDENT BY ID =====
   static Future<Map<String, dynamic>?> getStudentById(int id) async {
     final db = await database;
-
     final res = await db.query(
       'children',
       where: 'id = ? AND deleted = 0',
       whereArgs: [id],
       limit: 1,
     );
-
     if (res.isEmpty) return null;
     return res.first;
   }
 
-  // ===== GET OBSERVATIONS OF STUDENT =====
   static Future<List<Map<String, dynamic>>> getObservationsByStudent(
     int studentId,
   ) async {
     final db = await database;
-
     return await db.query(
       'observations',
       where: 'child_id = ? AND deleted = 0',
@@ -456,20 +430,16 @@ class DBService {
     );
   }
 
-  // ===== INSERT OBSERVATION =====
   static Future<void> insertObservation({
     required int childId,
     required int teacherId,
     required int classId,
     required String context,
     required String notes,
-    required String overallRiskLevel, // green/orange/red
+    required String overallRiskLevel,
   }) async {
     final db = await database;
-
     final now = DateTime.now().toIso8601String();
-
-    // 1) ajouter observation
     await db.insert('observations', {
       'child_id': childId,
       'teacher_id': teacherId,
@@ -483,8 +453,6 @@ class DBService {
       'deleted': 0,
       'synced': 1,
     });
-
-    // 2) mettre à jour l'élève (children)
     await db.update(
       'children',
       {
@@ -509,43 +477,30 @@ class DBService {
     required int classId,
     required String context,
     required String notes,
-    required Map<int, int> answers, // questionId -> 0/1/2
+    required Map<int, int> answers,
   }) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
-
-    // total score
     final totalScore = answers.values.fold<int>(0, (a, b) => a + b);
     final maxScore = answers.length * 2;
     final percent = (totalScore / maxScore) * 100;
-
     final risk = computeRiskLevel(percent);
-
-    // calcul par domaine (optionnel mais recommandé)
-    double inattention = 0;
-    double hyper = 0;
-    double selfreg = 0;
-
-    // pour ça on doit connaitre domain de chaque question
+    double inattention = 0, hyper = 0, selfreg = 0;
     final qs = await db.query(
       "checklist_questions",
       columns: ["id", "domain"],
       where: "id IN (${answers.keys.map((_) => '?').join(',')})",
       whereArgs: answers.keys.toList(),
     );
-
     for (final q in qs) {
       final id = q["id"] as int;
       final domain = q["domain"] as String?;
       final val = answers[id] ?? 0;
-
       if (domain == "inattention") inattention += val;
       if (domain == "hyperactivity_impulsivity") hyper += val;
       if (domain == "self_regulation_social") selfreg += val;
     }
-
     await db.transaction((txn) async {
-      // 1) insert observation
       final obsId = await txn.insert("observations", {
         "child_id": childId,
         "teacher_id": teacherId,
@@ -553,22 +508,17 @@ class DBService {
         "date": now,
         "context": context,
         "notes": notes,
-
         "inattention_raw_score": inattention,
         "hyperactivity_raw_score": hyper,
         "selfreg_social_raw_score": selfreg,
         "total_raw_score": totalScore.toDouble(),
-
         "total_percent": percent,
         "overall_risk_level": risk,
-
         "created_at": now,
         "updated_at": now,
         "deleted": 0,
-        "synced": 0, // ✅ Fix : 0 pour Firestore
+        "synced": 0,
       });
-
-      // 2) insert answers
       for (final entry in answers.entries) {
         await txn.insert("observation_answers", {
           "observation_id": obsId,
@@ -577,11 +527,9 @@ class DBService {
           "created_at": now,
           "updated_at": now,
           "deleted": 0,
-          "synced": 0, // ✅ Fix : 0 pour Firestore
+          "synced": 0,
         });
       }
-
-      // 3) update child latest risk
       await txn.update(
         "children",
         {
@@ -597,7 +545,6 @@ class DBService {
 
   static Future<List<Map<String, dynamic>>> getChecklistQuestions() async {
     final db = await database;
-
     return await db.query(
       'checklist_questions',
       where: 'is_active = 1 AND deleted = 0',
@@ -607,16 +554,10 @@ class DBService {
 
   static Future<void> insertChecklistQuestions() async {
     final db = await database;
-    // 🔥 IMPORTANT : insérer seulement si table vide
     final exist = await checklistQuestionsExist();
-    if (exist) {
-      print("checklist_questions déjà remplie.");
-      return;
-    }
+    if (exist) return;
     final now = DateTime.now().toIso8601String();
-
     final List<Map<String, dynamic>> questions = [
-      // ===== DOMAIN 1: INATTENTION (9 ITEMS) =====
       {
         "domain": "inattention",
         "order_index": 1,
@@ -659,14 +600,14 @@ class DBService {
         "order_index": 6,
         "text_en": "Avoids or dislikes tasks that require sustained attention.",
         "text_fr":
-            "Évite ou n’aime pas les tâches nécessitant une attention soutenue.",
+            "Évite ou n'aime pas les tâches nécessitant une attention soutenue.",
         "text_ar": "يتجنب أو لا يحب المهام التي تتطلب تركيزاً مستمراً.",
       },
       {
         "domain": "inattention",
         "order_index": 7,
         "text_en": "Makes careless mistakes in simple tasks.",
-        "text_fr": "Fait des erreurs d’inattention dans des tâches simples.",
+        "text_fr": "Fait des erreurs d'inattention dans des tâches simples.",
         "text_ar": "يرتكب أخطاء غير متعمدة في المهام البسيطة.",
       },
       {
@@ -683,8 +624,6 @@ class DBService {
         "text_fr": "Perd souvent les objets nécessaires aux activités.",
         "text_ar": "يفقد كثيراً الأشياء اللازمة للأنشطة.",
       },
-
-      // ===== DOMAIN 2: HYPERACTIVITY & IMPULSIVITY (9 ITEMS) =====
       {
         "domain": "hyperactivity_impulsivity",
         "order_index": 10,
@@ -706,7 +645,7 @@ class DBService {
         "domain": "hyperactivity_impulsivity",
         "order_index": 12,
         "text_en": "Fidgets constantly (hands, feet, or body).",
-        "text_fr": "S’agite constamment (mains, pieds ou corps).",
+        "text_fr": "S'agite constamment (mains, pieds ou corps).",
         "text_ar": "يتململ باستمرار (اليدين، القدمين أو الجسم).",
       },
       {
@@ -751,8 +690,6 @@ class DBService {
         "text_fr": "Quitte sa place ou son espace de travail sans permission.",
         "text_ar": "يترك مكانه أو مساحة عمله بدون إذن.",
       },
-
-      // ===== DOMAIN 3: SELF-REGULATION & SOCIAL-EMOTIONAL (6 ITEMS) =====
       {
         "domain": "self_regulation_social",
         "order_index": 19,
@@ -800,7 +737,6 @@ class DBService {
         "text_ar": "يحتاج إلى تذكيرات متكررة لاتباع القواعد أو الروتين.",
       },
     ];
-
     await db.transaction((txn) async {
       for (final q in questions) {
         await txn.insert("checklist_questions", {
@@ -814,10 +750,6 @@ class DBService {
         });
       }
     });
-
-    print(
-      "✅ 24 questions insérées dans checklist_questions avec arabe correct",
-    );
   }
 
   static Future<bool> checklistQuestionsExist() async {
@@ -825,93 +757,58 @@ class DBService {
     final res = await db.rawQuery(
       "SELECT COUNT(*) as c FROM checklist_questions WHERE deleted = 0",
     );
-    final count = Sqflite.firstIntValue(res) ?? 0;
-    return count > 0;
+    return (Sqflite.firstIntValue(res) ?? 0) > 0;
   }
 
   static Future<List<Map<String, dynamic>>> getActiveStudentsByTeacher(
     int teacherId,
   ) async {
     final db = await database;
-
     return await db.rawQuery(
       '''
-    SELECT ch.*, c.name AS class_name
-    FROM children ch
-    LEFT JOIN classes c ON c.id = ch.class_id
-    WHERE ch.main_teacher_id = ?
-      AND ch.deleted = 0
-    ORDER BY ch.first_name ASC
-  ''',
+      SELECT ch.*, c.name AS class_name FROM children ch
+      LEFT JOIN classes c ON c.id = ch.class_id
+      WHERE ch.main_teacher_id = ? AND ch.deleted = 0
+      ORDER BY ch.first_name ASC
+    ''',
       [teacherId],
     );
   }
 
-  // ===== DASHBOARD : stats par classe pour un prof =====
   static Future<List<Map<String, dynamic>>> getDashboardStats(
     int teacherId,
   ) async {
     final db = await database;
-
-    // 1. Toutes les classes du prof
     final classes = await db.rawQuery(
       '''
-      SELECT c.id, c.name, c.level, c.academic_year
-      FROM classes c
+      SELECT c.id, c.name, c.level, c.academic_year FROM classes c
       INNER JOIN class_teachers ct ON ct.class_id = c.id
-      WHERE ct.teacher_id = ? AND c.deleted = 0
-      ORDER BY c.name ASC
+      WHERE ct.teacher_id = ? AND c.deleted = 0 ORDER BY c.name ASC
     ''',
       [teacherId],
     );
-
     final List<Map<String, dynamic>> result = [];
-
     for (final cls in classes) {
       final classId = cls['id'] as int;
-
-      // 2. Nombre total d'élèves actifs dans cette classe
       final countRes = await db.rawQuery(
-        '''
-        SELECT COUNT(*) AS total FROM children
-        WHERE class_id = ? AND deleted = 0
-      ''',
+        'SELECT COUNT(*) AS total FROM children WHERE class_id = ? AND deleted = 0',
         [classId],
       );
       final total = (countRes.first['total'] as int?) ?? 0;
-
-      // 3. Stats risque pour cette classe
       final riskRes = await db.rawQuery(
-        '''
-        SELECT latest_overall_risk_level AS risk, COUNT(*) AS cnt
-        FROM children
-        WHERE class_id = ? AND deleted = 0
-        GROUP BY latest_overall_risk_level
-      ''',
+        'SELECT latest_overall_risk_level AS risk, COUNT(*) AS cnt FROM children WHERE class_id = ? AND deleted = 0 GROUP BY latest_overall_risk_level',
         [classId],
       );
-
       int green = 0, orange = 0, red = 0;
       for (final r in riskRes) {
-        final risk = r['risk'] as String?;
-        final cnt = (r['cnt'] as int?) ?? 0;
-        if (risk == 'green') green = cnt;
-        if (risk == 'orange') orange = cnt;
-        if (risk == 'red') red = cnt;
+        if (r['risk'] == 'green') green = (r['cnt'] as int?) ?? 0;
+        if (r['risk'] == 'orange') orange = (r['cnt'] as int?) ?? 0;
+        if (r['risk'] == 'red') red = (r['cnt'] as int?) ?? 0;
       }
-
-      // 4. Liste des élèves récents (3 derniers ajoutés)
       final recentStudents = await db.rawQuery(
-        '''
-        SELECT first_name, last_name, latest_overall_risk_level, gender
-        FROM children
-        WHERE class_id = ? AND deleted = 0
-        ORDER BY created_at DESC
-        LIMIT 3
-      ''',
+        'SELECT first_name, last_name, latest_overall_risk_level, gender FROM children WHERE class_id = ? AND deleted = 0 ORDER BY created_at DESC LIMIT 3',
         [classId],
       );
-
       result.add({
         'id': classId,
         'name': cls['name'],
@@ -924,36 +821,101 @@ class DBService {
         'recent': recentStudents,
       });
     }
-
     return result;
   }
 
   static Future<Map<String, int>> getRiskStatsByTeacher(int teacherId) async {
     final db = await database;
-
     final result = await db.rawQuery(
-      '''
-    SELECT latest_overall_risk_level AS risk, COUNT(*) AS count
-    FROM children
-    WHERE main_teacher_id = ? AND deleted = 0
-    GROUP BY latest_overall_risk_level
-  ''',
+      'SELECT latest_overall_risk_level AS risk, COUNT(*) AS count FROM children WHERE main_teacher_id = ? AND deleted = 0 GROUP BY latest_overall_risk_level',
       [teacherId],
     );
-
-    // Convertir en map facile pour le pie chart
     final Map<String, int> stats = {'green': 0, 'orange': 0, 'red': 0};
-
     for (final row in result) {
       final risk = row['risk'] as String?;
       final count = row['count'] as int?;
       if (risk != null && count != null) stats[risk] = count;
     }
-
     return stats;
   }
 
-  // ===== TOUS LES ÉLÈVES D'UNE ÉCOLE (pour Admin fallback) =====
+  // ═══════════════════════════════════════════════════════
+  // MULTI-ÉCOLE : queries pour admin gérant plusieurs écoles
+  // ═══════════════════════════════════════════════════════
+
+  /// Tous les élèves de TOUTES les écoles gérées par l'admin
+  static Future<List<Map<String, dynamic>>> getAllChildrenForAdmin({
+    required Teacher admin,
+    String? filterSchoolName, // null = toutes les écoles
+    String? filterSchoolCity,
+  }) async {
+    final db = await database;
+    final schools = admin.allManagedSchools;
+
+    if (schools.isEmpty) return [];
+
+    // Filtre sur une école spécifique
+    if (filterSchoolName != null && filterSchoolCity != null) {
+      return await getAllChildrenWithDetails(
+        schoolName: filterSchoolName,
+        schoolCity: filterSchoolCity,
+      );
+    }
+
+    // Toutes les écoles → union des résultats
+    final List<Map<String, dynamic>> all = [];
+    for (final school in schools) {
+      final kids = await getAllChildrenWithDetails(
+        schoolName: school['name']!,
+        schoolCity: school['city']!,
+      );
+      // Ajouter le nom de l'école pour distinguer
+      for (final k in kids) {
+        all.add({
+          ...k,
+          '_school_name': school['name'],
+          '_school_city': school['city'],
+        });
+      }
+    }
+    return all;
+  }
+
+  /// Tous les teachers de TOUTES les écoles gérées
+  static Future<List<Map<String, dynamic>>> getTeachersForAdmin({
+    required Teacher admin,
+    String? filterSchoolName,
+    String? filterSchoolCity,
+  }) async {
+    final db = await database;
+    final schools = admin.allManagedSchools;
+
+    if (filterSchoolName != null && filterSchoolCity != null) {
+      return getTeachersBySchool(
+        schoolName: filterSchoolName,
+        schoolCity: filterSchoolCity,
+      );
+    }
+
+    final List<Map<String, dynamic>> all = [];
+    for (final school in schools) {
+      final teachers = await getTeachersBySchool(
+        schoolName: school['name']!,
+        schoolCity: school['city']!,
+      );
+      for (final t in teachers) {
+        all.add({
+          ...t,
+          '_school_name': school['name'],
+          '_school_city': school['city'],
+        });
+      }
+    }
+    return all;
+  }
+
+  // ── Queries existantes (inchangées) ─────────────────────
+
   static Future<List<Map<String, dynamic>>> getAllStudentsInSchool({
     required String schoolName,
     required String schoolCity,
@@ -963,57 +925,37 @@ class DBService {
       '''
       SELECT ch.* FROM children ch
       INNER JOIN classes cl ON ch.class_id = cl.id
-      WHERE cl.school_name = ?
-        AND cl.school_city = ?
-        AND ch.deleted = 0
+      WHERE cl.school_name = ? AND cl.school_city = ? AND ch.deleted = 0
       ORDER BY ch.first_name ASC
     ''',
       [schoolName, schoolCity],
     );
   }
 
-  // ═══════════════════════════════════════════════════════
-  // TOUS LES ENFANTS D'UNE ÉCOLE avec détails complets
-  // (name, age, level de classe, professeur)
-  // ═══════════════════════════════════════════════════════
   static Future<List<Map<String, dynamic>>> getAllChildrenWithDetails({
     required String schoolName,
     required String schoolCity,
   }) async {
     final db = await database;
-    // Filtrer par les teachers de l'école (pas par school de la classe)
-    // Cela garantit que tous les élèves de tous les profs de l'école apparaissent
     return await db.rawQuery(
       '''
       SELECT
-        ch.id,
-        ch.child_code,
-        ch.first_name,
-        ch.last_name,
-        ch.gender,
-        ch.birth_date,
-        ch.latest_overall_risk_level,
-        ch.latest_observation_date,
-        ch.notes,
-        cl.name        AS class_name,
-        cl.level       AS class_level,
-        t.first_name   AS teacher_first_name,
-        t.last_name    AS teacher_last_name,
-        t.email        AS teacher_email
+        ch.id, ch.child_code, ch.first_name, ch.last_name, ch.gender,
+        ch.birth_date, ch.latest_overall_risk_level, ch.latest_observation_date, ch.notes,
+        cl.name AS class_name, cl.level AS class_level,
+        t.first_name AS teacher_first_name, t.last_name AS teacher_last_name,
+        t.email AS teacher_email
       FROM children ch
       INNER JOIN classes cl ON ch.class_id = cl.id
-      INNER JOIN teachers t  ON ch.main_teacher_id = t.id
-      WHERE t.school_name = ?
-        AND t.school_city = ?
-        AND t.deleted = 0
-        AND ch.deleted = 0
+      INNER JOIN teachers t ON ch.main_teacher_id = t.id
+      WHERE t.school_name = ? AND t.school_city = ?
+        AND t.deleted = 0 AND ch.deleted = 0
       ORDER BY t.first_name ASC, ch.first_name ASC
     ''',
       [schoolName, schoolCity],
     );
   }
 
-  // Nombre total d'enfants dans une école (via teachers de l'école)
   static Future<int> countChildrenInSchool({
     required String schoolName,
     required String schoolCity,
@@ -1023,10 +965,7 @@ class DBService {
       '''
       SELECT COUNT(*) AS cnt FROM children ch
       INNER JOIN teachers t ON ch.main_teacher_id = t.id
-      WHERE t.school_name = ?
-        AND t.school_city = ?
-        AND t.deleted = 0
-        AND ch.deleted = 0
+      WHERE t.school_name = ? AND t.school_city = ? AND t.deleted = 0 AND ch.deleted = 0
     ''',
       [schoolName, schoolCity],
     );
@@ -1038,14 +977,9 @@ class DBService {
     required String schoolCity,
   }) async {
     final db = await database;
-    // ✅ Afficher TOUS les utilisateurs de l'école (teachers + admins)
     return await db.query(
       'teachers',
-      where: '''
-      deleted = 0
-      AND school_name = ?
-      AND school_city = ?
-    ''',
+      where: 'deleted = 0 AND school_name = ? AND school_city = ?',
       whereArgs: [schoolName, schoolCity],
       orderBy: 'role ASC, first_name ASC',
     );
@@ -1056,11 +990,10 @@ class DBService {
     required Map<String, dynamic> data,
   }) async {
     final db = await database;
-
     await db.update(
-      "teachers",
-      {...data, "updated_at": DateTime.now().toIso8601String()},
-      where: "id = ?",
+      'teachers',
+      {...data, 'updated_at': DateTime.now().toIso8601String()},
+      where: 'id = ?',
       whereArgs: [teacherId],
     );
   }
@@ -1083,14 +1016,13 @@ class DBService {
     required bool isActive,
   }) async {
     final db = await database;
-
     await db.update(
-      "teachers",
+      'teachers',
       {
-        "is_active": isActive ? 1 : 0,
-        "updated_at": DateTime.now().toIso8601String(),
+        'is_active': isActive ? 1 : 0,
+        'updated_at': DateTime.now().toIso8601String(),
       },
-      where: "id = ?",
+      where: 'id = ?',
       whereArgs: [teacherId],
     );
   }
@@ -1098,38 +1030,31 @@ class DBService {
   static Future<void> archiveTeacher(int teacherId) async {
     final db = await database;
     await db.update(
-      "teachers",
-      {"deleted": 1, "updated_at": DateTime.now().toIso8601String()},
-      where: "id = ?",
+      'teachers',
+      {'deleted': 1, 'updated_at': DateTime.now().toIso8601String()},
+      where: 'id = ?',
       whereArgs: [teacherId],
     );
   }
 
-  // ===== DELETE TEACHER (suppression définitive) =====
   static Future<void> deleteTeacher(int teacherId) async {
     final db = await database;
-    // Supprimer les liens class_teachers
     await db.delete(
-      "class_teachers",
-      where: "teacher_id = ?",
+      'class_teachers',
+      where: 'teacher_id = ?',
       whereArgs: [teacherId],
     );
-    // Supprimer le professeur
-    await db.delete("teachers", where: "id = ?", whereArgs: [teacherId]);
+    await db.delete('teachers', where: 'id = ?', whereArgs: [teacherId]);
   }
 
-  // ===== STATS PROFESSEUR (classes + élèves) =====
   static Future<Map<String, dynamic>> getTeacherStats(int teacherId) async {
     final db = await database;
     final classRes = await db.rawQuery(
-      'SELECT COUNT(*) AS cnt FROM classes c '
-      'INNER JOIN class_teachers ct ON ct.class_id = c.id '
-      'WHERE ct.teacher_id = ? AND c.deleted = 0',
+      'SELECT COUNT(*) AS cnt FROM classes c INNER JOIN class_teachers ct ON ct.class_id = c.id WHERE ct.teacher_id = ? AND c.deleted = 0',
       [teacherId],
     );
     final studentRes = await db.rawQuery(
-      'SELECT COUNT(*) AS cnt FROM children '
-      'WHERE main_teacher_id = ? AND deleted = 0',
+      'SELECT COUNT(*) AS cnt FROM children WHERE main_teacher_id = ? AND deleted = 0',
       [teacherId],
     );
     return {
@@ -1144,18 +1069,12 @@ class DBService {
     required String schoolCity,
   }) async {
     final db = await database;
-
     return await db.rawQuery(
       '''
-    SELECT c.*
-    FROM classes c
-    INNER JOIN class_teachers ct ON ct.class_id = c.id
-    WHERE ct.teacher_id = ?
-      AND c.deleted = 0
-      AND c.school_name = ?
-      AND c.school_city = ?
-    ORDER BY c.name ASC
-  ''',
+      SELECT c.* FROM classes c INNER JOIN class_teachers ct ON ct.class_id = c.id
+      WHERE ct.teacher_id = ? AND c.deleted = 0 AND c.school_name = ? AND c.school_city = ?
+      ORDER BY c.name ASC
+    ''',
       [teacherId, schoolName, schoolCity],
     );
   }
@@ -1166,18 +1085,12 @@ class DBService {
     required String schoolCity,
   }) async {
     final db = await database;
-
     return await db.rawQuery(
       '''
-    SELECT ch.*
-    FROM children ch
-    INNER JOIN classes c ON c.id = ch.class_id
-    WHERE ch.class_id = ?
-      AND ch.deleted = 0
-      AND c.school_name = ?
-      AND c.school_city = ?
-    ORDER BY ch.first_name ASC
-  ''',
+      SELECT ch.* FROM children ch INNER JOIN classes c ON c.id = ch.class_id
+      WHERE ch.class_id = ? AND ch.deleted = 0 AND c.school_name = ? AND c.school_city = ?
+      ORDER BY ch.first_name ASC
+    ''',
       [classId, schoolName, schoolCity],
     );
   }
@@ -1187,11 +1100,10 @@ class DBService {
     required Map<String, dynamic> data,
   }) async {
     final db = await database;
-
     await db.update(
-      "children",
-      {...data, "updated_at": DateTime.now().toIso8601String()},
-      where: "id = ?",
+      'children',
+      {...data, 'updated_at': DateTime.now().toIso8601String()},
+      where: 'id = ?',
       whereArgs: [studentId],
     );
   }

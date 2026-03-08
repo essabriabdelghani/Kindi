@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/db_service.dart';
@@ -9,7 +8,6 @@ import '../models/teachers.dart';
 // Abréviations des 24 questions pour les en-têtes Excel
 // ═══════════════════════════════════════════════════════════
 const List<Map<String, String>> _questionAbbr = [
-  // INATTENTION (Q1–Q9)
   {
     'id': '1',
     'abbr': 'INAT1-Concentr.',
@@ -43,7 +41,6 @@ const List<Map<String, String>> _questionAbbr = [
   },
   {'id': '8', 'abbr': 'INAT8-Organ.', 'full': 'Difficultes a s-organiser'},
   {'id': '9', 'abbr': 'INAT9-Perd.Obj.', 'full': 'Perd souvent ses affaires'},
-  // HYPERACTIVITÉ/IMPULSIVITÉ (Q10–Q18)
   {'id': '10', 'abbr': 'HYP10-Assis.', 'full': 'Mal a rester assis'},
   {
     'id': '11',
@@ -65,7 +62,6 @@ const List<Map<String, String>> _questionAbbr = [
     'abbr': 'HYP18-Quitte.',
     'full': 'Quitte sa place sans permission',
   },
-  // AUTORÉGULATION/SOCIAL (Q19–Q24)
   {'id': '19', 'abbr': 'SOC19-Emot.', 'full': 'Mal a gerer ses emotions'},
   {'id': '20', 'abbr': 'SOC20-Routine.', 'full': 'S-enerve si routine change'},
   {'id': '21', 'abbr': 'SOC21-Calme.', 'full': 'Mal a se calmer apres conflit'},
@@ -120,7 +116,6 @@ class ExportService {
     return '—';
   }
 
-  // 0 = Jamais, 1 = Parfois, 2 = Souvent
   static String _answerLabel(int? v) {
     switch (v) {
       case 0:
@@ -143,11 +138,8 @@ class ExportService {
     return s;
   }
 
-  // Charger les réponses de la dernière observation pour un enfant
   static Future<Map<int, int>> _getLatestAnswers(int childId) async {
     final db = await DBService.database;
-
-    // Récupérer la dernière observation
     final obs = await db.query(
       'observations',
       where: 'child_id = ? AND deleted = 0',
@@ -156,26 +148,19 @@ class ExportService {
       limit: 1,
     );
     if (obs.isEmpty) return {};
-
     final obsId = obs.first['id'] as int;
-
-    // Récupérer toutes les réponses de cette observation
     final answers = await db.query(
       'observation_answers',
       where: 'observation_id = ? AND deleted = 0',
       whereArgs: [obsId],
     );
-
     final Map<int, int> result = {};
     for (final a in answers) {
-      final qId = a['question_id'] as int;
-      final val = a['numeric_value'] as int? ?? 0;
-      result[qId] = val;
+      result[a['question_id'] as int] = a['numeric_value'] as int? ?? 0;
     }
     return result;
   }
 
-  // Charger le mapping question order_index → id depuis la DB
   static Future<Map<int, int>> _getQuestionIdMap() async {
     final db = await DBService.database;
     final rows = await db.query(
@@ -184,24 +169,32 @@ class ExportService {
       where: 'deleted = 0',
       orderBy: 'order_index ASC',
     );
-    final Map<int, int> map = {}; // order_index → id
+    final Map<int, int> map = {};
     for (final r in rows) {
       map[r['order_index'] as int] = r['id'] as int;
     }
     return map;
   }
 
-  // ── Export principal ─────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  //  EXPORT PRINCIPAL
+  //  ✅ filterSchoolName/City : null = toutes les écoles gérées
+  // ══════════════════════════════════════════════════════════
   static Future<ExportResult> exportChildren({
     required Teacher admin,
     required void Function(String msg) onProgress,
+    String? filterSchoolName, // ✅ null = toutes les écoles
+    String? filterSchoolCity,
   }) async {
     try {
       onProgress('Chargement des élèves...');
 
-      final children = await DBService.getAllChildrenWithDetails(
-        schoolName: admin.schoolName!,
-        schoolCity: admin.schoolCity!,
+      // ✅ CORRECTION : utiliser getAllChildrenForAdmin avec le filtre
+      // au lieu de getAllChildrenWithDetails qui prend toujours l'école principale
+      final children = await DBService.getAllChildrenForAdmin(
+        admin: admin,
+        filterSchoolName: filterSchoolName,
+        filterSchoolCity: filterSchoolCity,
       );
 
       if (children.isEmpty) return ExportResult.empty;
@@ -209,33 +202,28 @@ class ExportService {
       onProgress('Chargement du questionnaire...');
       final questionIdMap = await _getQuestionIdMap();
 
+      // ── Déterminer si on exporte plusieurs écoles ──
+      final isAllSchools = filterSchoolName == null;
+      final isMultiSchool = admin.allManagedSchools.length > 1;
+
       // ── En-têtes ──
       final infoHeaders = [
-        'Code',
-        'Prénom',
-        'Nom',
-        'Genre',
-        'Âge',
-        'Naissance',
-        'Classe',
-        'Niveau',
-        'Professeur',
+        'Code', 'Prénom', 'Nom', 'Genre', 'Âge', 'Naissance',
+        'Classe', 'Niveau', 'Professeur',
+        // ✅ Colonne École seulement si multi-école en mode "toutes"
+        if (isAllSchools && isMultiSchool) 'École',
         'Risque',
-        'Score Inat.%',
-        'Score Hyp.%',
-        'Score Soc.%',
-        'Score Total%',
+        'Score Inat.%', 'Score Hyp.%', 'Score Soc.%', 'Score Total%',
       ];
       final questionHeaders = _questionAbbr.map((q) => q['abbr']!).toList();
       final allHeaders = [...infoHeaders, ...questionHeaders];
 
       final lines = StringBuffer();
 
-      // ── Ligne 1 : en-têtes abréviés ──
+      // ── Ligne 1 : en-têtes ──
       lines.writeln(allHeaders.map(_csv).join(','));
 
-      // ── Ligne 2 : légende des abréviations ──
-      // (vide pour les colonnes info, puis le texte complet pour les questions)
+      // ── Ligne 2 : légende questions ──
       final legendRow = [
         ...List.filled(infoHeaders.length, ''),
         ..._questionAbbr.map((q) => q['full']!),
@@ -251,9 +239,9 @@ class ExportService {
         ),
       ];
       lines.writeln(valuesRow.map(_csv).join(','));
+      lines.writeln('');
 
-      lines.writeln(''); // séparateur
-
+      // ── Données élèves ──
       int i = 0;
       for (final c in children) {
         i++;
@@ -261,28 +249,9 @@ class ExportService {
 
         final childId = c['id'] as int;
         final age = _calcAge(c['birth_date'] as String?);
-
-        // Récupérer les réponses
         final answers = await _getLatestAnswers(childId);
 
-        // Infos de base
-        final infoRow = [
-          c['child_code'],
-          c['first_name'],
-          c['last_name'],
-          _genderLabel(c['gender'] as String?),
-          age != null ? '$age ans' : '',
-          c['birth_date'] ?? '',
-          c['class_name'],
-          c['class_level'],
-          '${c['teacher_first_name'] ?? ''} ${c['teacher_last_name'] ?? ''}'
-              .trim(),
-          _riskLabel(c['latest_overall_risk_level'] as String?),
-          // Scores (depuis la DB children + dernière observation)
-          '', '', '', '', // placeholder — récupéré via observation scores
-        ];
-
-        // Récupérer les scores depuis la dernière observation
+        // Scores depuis dernière observation
         final db = await DBService.database;
         final obs = await db.query(
           'observations',
@@ -308,6 +277,9 @@ class ExportService {
               : '—';
         }
 
+        // ✅ Nom école depuis _school_name (ajouté par getAllChildrenForAdmin)
+        final schoolName = c['_school_name'] as String? ?? '';
+
         final finalInfoRow = [
           c['child_code'],
           c['first_name'],
@@ -319,14 +291,12 @@ class ExportService {
           c['class_level'],
           '${c['teacher_first_name'] ?? ''} ${c['teacher_last_name'] ?? ''}'
               .trim(),
+          // ✅ Colonne école seulement si toutes les écoles + multi-école
+          if (isAllSchools && isMultiSchool) schoolName,
           _riskLabel(c['latest_overall_risk_level'] as String?),
-          inatPct,
-          hypPct,
-          socPct,
-          totalPct,
+          inatPct, hypPct, socPct, totalPct,
         ];
 
-        // Réponses aux 24 questions dans l'ordre
         final answerRow = _questionAbbr.map((q) {
           final orderIdx = int.parse(q['id']!);
           final qId = questionIdMap[orderIdx];
@@ -340,12 +310,34 @@ class ExportService {
 
       onProgress('Enregistrement du fichier...');
 
+      // ✅ NOM DE FICHIER selon le contexte
       final dir = await getTemporaryDirectory();
       final now = DateTime.now();
-      final fileName =
-          'eleves_${admin.schoolName}_${now.year}${now.month.toString().padLeft(2, "0")}${now.day.toString().padLeft(2, "0")}.csv';
-      final file = File('${dir.path}/$fileName');
-      // UTF-16 LE avec BOM — lu parfaitement par Google Sheets et Excel
+      final dateStr =
+          '${now.year}${now.month.toString().padLeft(2, "0")}${now.day.toString().padLeft(2, "0")}';
+
+      final String fileBase;
+      final String shareSubject;
+
+      if (isAllSchools && isMultiSchool) {
+        // Toutes les écoles → "tous_etudiants"
+        fileBase = 'tous_etudiants_$dateStr';
+        shareSubject = 'Tous les élèves (${children.length} élèves)';
+      } else {
+        // Une école spécifique → "eleves_nomecole_ville"
+        final schoolN = (filterSchoolName ?? admin.schoolName).replaceAll(
+          ' ',
+          '_',
+        );
+        final schoolC = (filterSchoolCity ?? admin.schoolCity).replaceAll(
+          ' ',
+          '_',
+        );
+        fileBase = 'eleves_${schoolN}_${schoolC}_$dateStr';
+        shareSubject = 'Élèves — $schoolN (${children.length} élèves)';
+      }
+
+      final file = File('${dir.path}/$fileBase.csv');
       final utf16Bytes = _encodeUtf16Le(lines.toString());
       await file.writeAsBytes(utf16Bytes);
 
@@ -353,7 +345,7 @@ class ExportService {
 
       await Share.shareXFiles(
         [XFile(file.path, mimeType: 'text/csv')],
-        subject: 'Élèves — ${admin.schoolName} (${children.length} élèves)',
+        subject: shareSubject,
         text:
             'Export du ${now.day}/${now.month}/${now.year} — ${children.length} élève${children.length > 1 ? "s" : ""}',
       );
@@ -365,17 +357,15 @@ class ExportService {
   }
 }
 
-// Encode une string en UTF-16 Little Endian avec BOM
-// Google Sheets et Excel reconnaissent toujours cet encodage
+// UTF-16 Little Endian avec BOM (Google Sheets + Excel)
 List<int> _encodeUtf16Le(String s) {
-  final bom = [0xFF, 0xFE]; // BOM UTF-16 LE
+  final bom = [0xFF, 0xFE];
   final bytes = <int>[];
   for (final rune in s.runes) {
     if (rune <= 0xFFFF) {
       bytes.add(rune & 0xFF);
       bytes.add((rune >> 8) & 0xFF);
     } else {
-      // Surrogate pair pour les caractères > 0xFFFF (rare)
       final u = rune - 0x10000;
       final high = 0xD800 + (u >> 10);
       final low = 0xDC00 + (u & 0x3FF);

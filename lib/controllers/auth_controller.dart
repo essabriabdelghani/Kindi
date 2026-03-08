@@ -1,5 +1,11 @@
+// ============================================================
+// auth_controller.dart — lib/controllers/auth_controller.dart
+// ✅ v2 : synchronise managedSchools depuis Firestore au login
+// ============================================================
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'dart:convert';
 import '../services/db_service.dart';
 import '../models/teachers.dart';
 import '../utils/security_helper.dart';
@@ -13,26 +19,18 @@ class AuthController {
 
   // ═══════════════════════════════════════════════════════
   //  REGISTER
-  //  InscriptionPage envoie le mot de passe EN CLAIR
-  //  → on hash UNE SEULE FOIS ici
   // ═══════════════════════════════════════════════════════
   static Future<RegisterResult> register(Teacher teacher) async {
     try {
-      // ✅ Garder le mot de passe clair pour Firebase
-      final plainPassword = teacher.passwordHash; // clair pour Firebase Auth
-      final passwordHash = SecurityHelper.hashPassword(
-        plainPassword,
-      ); // hash pour SQLite
+      final plainPassword = teacher.passwordHash;
+      final passwordHash = SecurityHelper.hashPassword(plainPassword);
 
-      // 1️⃣ FIREBASE AUTH — mot de passe EN CLAIR
       try {
         final cred = await _fbAuth.createUserWithEmailAndPassword(
           email: teacher.email,
           password: plainPassword,
         );
-        // ✅ Envoyer email de vérification
         await cred.user?.sendEmailVerification();
-        print('✅ Firebase Auth : compte créé + email vérification envoyé');
       } on fb.FirebaseAuthException catch (e) {
         switch (e.code) {
           case 'email-already-in-use':
@@ -46,9 +44,8 @@ class AuthController {
         }
       }
 
-      // 2️⃣ SQLITE — stocker le hash (pas le mot de passe clair)
       final now = DateTime.now().toIso8601String();
-      teacher.passwordHash = passwordHash; // ← même hash que Firebase
+      teacher.passwordHash = passwordHash;
       teacher.createdAt = now;
       teacher.updatedAt = now;
       teacher.synced = 0;
@@ -58,7 +55,6 @@ class AuthController {
       final success = await DBService.insertTeacher(teacher);
       if (!success) return RegisterResult.emailAlreadyUsed;
 
-      // 3️⃣ FIRESTORE
       final saved = await DBService.login(
         email: teacher.email,
         passwordHash: passwordHash,
@@ -73,18 +69,13 @@ class AuthController {
   }
 
   // ═══════════════════════════════════════════════════════
-  //  SYNC INSCRIPTION → FIRESTORE
-  //  Appelé après chaque inscription réussie
-  //  Retry automatique x3 pour garantir que l'admin voit le prof
+  //  SYNC INSCRIPTION → FIRESTORE (retry x3)
   // ═══════════════════════════════════════════════════════
   static Future<void> _syncNewTeacher(Teacher teacher) async {
     const maxRetries = 3;
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        // Envoyer vers Firestore — admin verra le prof en temps réel
         await FirestoreService.upsertTeacher(teacher);
-
-        // Marquer synced=1 dans SQLite
         final db = await DBService.database;
         await db.update(
           'teachers',
@@ -92,43 +83,26 @@ class AuthController {
           where: 'id = ?',
           whereArgs: [teacher.id],
         );
-
-        print(
-          '✅ Nouveau prof synced vers Firestore (tentative ' +
-              attempt.toString() +
-              ')',
-        );
-        return; // succès → sortir
+        print('✅ Nouveau prof synced vers Firestore (tentative $attempt)');
+        return;
       } catch (e) {
-        print(
-          '⚠️ Sync tentative ' +
-              attempt.toString() +
-              '/' +
-              maxRetries.toString() +
-              ' : ' +
-              e.toString(),
-        );
-        if (attempt < maxRetries) {
-          // Attendre avant de réessayer (1s, 2s, 3s)
+        print('⚠️ Sync tentative $attempt/$maxRetries : $e');
+        if (attempt < maxRetries)
           await Future.delayed(Duration(seconds: attempt));
-        }
       }
     }
-    // Après 3 échecs → synced reste 0, SyncEngine l'enverra au prochain lancement
     print('ℹ️ Sync différée — sera envoyée au prochain lancement');
   }
 
   // ═══════════════════════════════════════════════════════
   //  LOGIN
-  //  ConnexionPage envoie DÉJÀ le hash (SecurityHelper.hashPassword)
-  //  → NE PAS re-hasher ici
   // ═══════════════════════════════════════════════════════
   static Future<LoginResult> login({
     required String email,
-    required String password, // ← mot de passe EN CLAIR pour Firebase
-    required String passwordHash, // ← hash SHA-256 pour SQLite
+    required String password, // EN CLAIR pour Firebase
+    required String passwordHash, // SHA-256 pour SQLite
   }) async {
-    // 1️⃣ FIREBASE AUTH — mot de passe EN CLAIR
+    // 1️⃣ FIREBASE AUTH
     bool firebaseOk = false;
     try {
       final cred = await _fbAuth.signInWithEmailAndPassword(
@@ -137,12 +111,10 @@ class AuthController {
       );
       final fbUser = cred.user;
       if (fbUser != null && !fbUser.emailVerified) {
-        // Email pas vérifié → déconnecter et bloquer
         await _fbAuth.signOut();
         return LoginResult(teacher: null, error: 'email_not_verified');
       }
       firebaseOk = true;
-      print('✅ Firebase Auth : connecté');
     } on fb.FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found' ||
           e.code == 'wrong-password' ||
@@ -156,15 +128,13 @@ class AuthController {
       print('ℹ️ Pas de réseau: $e');
     }
 
-    // 2️⃣ SQLITE LOCAL — avec le hash SHA-256
+    // 2️⃣ SQLITE LOCAL
     Teacher? teacher = await DBService.login(
       email: email,
       passwordHash: passwordHash,
     );
 
-    // ✅ CAS RESET PASSWORD :
-    // Firebase OK (nouveau mdp en clair) mais SQLite a l'ancien hash
-    // → mettre à jour SQLite avec le nouveau hash
+    // Cas reset password
     if (teacher == null && firebaseOk) {
       print('🔄 Reset password détecté → mise à jour SQLite');
       await DBService.updatePasswordHash(
@@ -181,8 +151,8 @@ class AuthController {
       );
     }
 
-    // 3️⃣ SYNC RÔLE DEPUIS FIRESTORE — Firestore fait autorité
-    teacher = await _syncRoleFromFirestore(teacher) ?? teacher;
+    // 3️⃣ SYNC DEPUIS FIRESTORE : rôle + managedSchools
+    teacher = await _syncFromFirestore(teacher) ?? teacher;
 
     // 4️⃣ SESSION + SYNC
     SessionService.login(teacher);
@@ -191,36 +161,75 @@ class AuthController {
     return LoginResult(teacher: teacher);
   }
 
-  // ── Lire le rôle depuis Firestore au login ──────────────
-  // Firestore est la seule source de vérité pour le rôle
-  // Un professeur ne peut PAS changer son propre rôle
-  static Future<Teacher?> _syncRoleFromFirestore(Teacher teacher) async {
+  // ═══════════════════════════════════════════════════════
+  //  SYNC RÔLE + MANAGED_SCHOOLS DEPUIS FIRESTORE
+  //  Firestore = source de vérité pour rôle et écoles gérées
+  // ═══════════════════════════════════════════════════════
+  static Future<Teacher?> _syncFromFirestore(Teacher teacher) async {
     try {
       final doc = await _firestore
           .collection('teachers')
-          .doc('teacher_' + teacher.id.toString())
+          .doc('teacher_${teacher.id}')
           .get();
 
       if (!doc.exists) return null;
       final data = doc.data();
       if (data == null) return null;
 
-      final remoteRole = data['role'] as String? ?? 'teacher';
+      final remoteRole = data['role'] as String? ?? teacher.role;
+      bool changed = false;
 
+      // ── Sync rôle ────────────────────────────────────────
       if (remoteRole != teacher.role) {
-        // Mettre à jour SQLite avec le rôle Firestore
+        changed = true;
+        print('✅ Rôle sync depuis Firestore: $remoteRole');
+      }
+
+      // ── Sync managedSchools ──────────────────────────────
+      List<Map<String, String>> remoteManagedSchools = [];
+      try {
+        final rawList = data['managed_schools'];
+        if (rawList is List) {
+          remoteManagedSchools = rawList
+              .map<Map<String, String>>(
+                (e) => {
+                  'name': (e['name'] ?? '').toString(),
+                  'city': (e['city'] ?? '').toString(),
+                },
+              )
+              .toList();
+        }
+      } catch (_) {}
+
+      // Comparer avec SQLite
+      final localSchools = teacher.managedSchools;
+      final localJson = jsonEncode(localSchools);
+      final remoteJson = jsonEncode(remoteManagedSchools);
+
+      if (localJson != remoteJson) {
+        changed = true;
+        print(
+          '✅ managedSchools sync depuis Firestore: ${remoteManagedSchools.length} école(s)',
+        );
+      }
+
+      if (changed) {
+        // Mettre à jour SQLite
         final db = await DBService.database;
         await db.rawUpdate(
-          'UPDATE teachers SET role = ?, synced = 1 WHERE id = ?',
-          [remoteRole, teacher.id],
+          'UPDATE teachers SET role = ?, managed_schools = ?, synced = 1 WHERE id = ?',
+          [remoteRole, jsonEncode(remoteManagedSchools), teacher.id],
         );
-        print('✅ Rôle sync depuis Firestore: ' + remoteRole);
-        return teacher.copyWith(role: remoteRole);
+
+        return teacher.copyWith(
+          role: remoteRole,
+          managedSchools: remoteManagedSchools,
+        );
       }
+
       return teacher;
     } catch (e) {
-      // Offline → garder le rôle SQLite local
-      print('ℹ️ Firestore offline au login: ' + e.toString());
+      print('ℹ️ Firestore offline au login: $e');
       return null;
     }
   }
@@ -238,29 +247,22 @@ class AuthController {
 
   // ═══════════════════════════════════════════════════════
   //  ÉTAPE 1 INSCRIPTION : Vérifier email avant de créer compte
-  //  → Crée un compte Firebase temporaire, envoie verification,
-  //    puis supprime le compte Firebase (SQLite pas encore touché)
   // ═══════════════════════════════════════════════════════
   static Future<String?> sendVerificationBeforeRegister({
     required String email,
     required String password,
   }) async {
     try {
-      // Créer compte Firebase temporaire
       final cred = await _fbAuth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
-      // Envoyer email de vérification
       await cred.user?.sendEmailVerification();
-      // Déconnecter (on garde juste l'email en attente)
       await _fbAuth.signOut();
-      print('✅ Email vérification envoyé à $email');
-      return null; // null = succès
+      return null;
     } on fb.FirebaseAuthException catch (e) {
       switch (e.code) {
         case 'email-already-in-use':
-          // Vérifier si l'email est déjà vérifié
           try {
             final cred = await _fbAuth.signInWithEmailAndPassword(
               email: email,
@@ -268,9 +270,8 @@ class AuthController {
             );
             if (cred.user?.emailVerified == true) {
               await _fbAuth.signOut();
-              return 'email_already_verified'; // compte existant vérifié
+              return 'email_already_verified';
             }
-            // Pas vérifié → renvoyer email
             await cred.user?.sendEmailVerification();
             await _fbAuth.signOut();
             return null;
@@ -291,7 +292,6 @@ class AuthController {
 
   // ═══════════════════════════════════════════════════════
   //  ÉTAPE 2 INSCRIPTION : Compléter après vérification email
-  //  → User a cliqué le lien → on finalise SQLite
   // ═══════════════════════════════════════════════════════
   static Future<RegisterResult> completeRegistrationAfterVerification(
     Teacher teacher,
@@ -300,7 +300,6 @@ class AuthController {
       final plainPassword = teacher.passwordHash;
       final passwordHash = SecurityHelper.hashPassword(plainPassword);
 
-      // Connecter pour vérifier que l'email est bien vérifié
       final cred = await _fbAuth.signInWithEmailAndPassword(
         email: teacher.email,
         password: plainPassword,
@@ -308,10 +307,9 @@ class AuthController {
 
       if (cred.user == null || !cred.user!.emailVerified) {
         await _fbAuth.signOut();
-        return RegisterResult.emailNotVerified; // email pas encore confirmé
+        return RegisterResult.emailNotVerified;
       }
 
-      // Email vérifié ✅ → sauvegarder dans SQLite
       final now = DateTime.now().toIso8601String();
       teacher.passwordHash = passwordHash;
       teacher.createdAt = now;
@@ -319,8 +317,6 @@ class AuthController {
       teacher.synced = 0;
       teacher.isActive = 1;
       teacher.deleted = 0;
-
-      // Normaliser school avant insert (match admin filter)
       teacher.schoolName = teacher.schoolName.trim().toLowerCase();
       teacher.schoolCity = teacher.schoolCity.trim().toLowerCase();
 
@@ -330,7 +326,6 @@ class AuthController {
         return RegisterResult.emailAlreadyUsed;
       }
 
-      // Sync Firestore immédiat — admin verra le prof en temps réel
       final saved = await DBService.login(
         email: teacher.email,
         passwordHash: passwordHash,
@@ -364,7 +359,6 @@ class AuthController {
       );
       await credential.user?.sendEmailVerification();
       await _fbAuth.signOut();
-      print('✅ Email vérification renvoyé à $email');
     } catch (e) {
       print('❌ Erreur renvoi email: $e');
     }
@@ -393,6 +387,19 @@ class AuthController {
       u.role == 'admin' || u.role == 'super_admin';
   static bool canDeleteObservations(Teacher u) =>
       u.role == 'admin' || u.role == 'super_admin';
+
+  // ✅ NOUVEAU : vérifier si admin peut accéder à une école
+  static bool canManageSchool(
+    Teacher admin,
+    String schoolName,
+    String schoolCity,
+  ) {
+    final name = schoolName.trim().toLowerCase();
+    final city = schoolCity.trim().toLowerCase();
+    return admin.allManagedSchools.any(
+      (s) => s['name'] == name && s['city'] == city,
+    );
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -427,8 +434,6 @@ enum RegisterResult {
 class LoginResult {
   final Teacher? teacher;
   final String? error;
-
   bool get success => teacher != null;
-
   LoginResult({required this.teacher, this.error});
 }

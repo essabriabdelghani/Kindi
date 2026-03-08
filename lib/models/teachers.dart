@@ -1,3 +1,9 @@
+// ============================================================
+// teachers.dart — lib/models/teachers.dart
+// ============================================================
+
+import 'dart:convert';
+
 class Teacher {
   int? id;
   String firstName;
@@ -7,8 +13,8 @@ class Teacher {
   String schoolName;
   String schoolCity;
   String? schoolRegion;
-  String role; // teacher, admin, researcher
-  String preferredLanguage; // ar, fr, en
+  String role;
+  String preferredLanguage;
   int? yearsOfExperience;
   String? gradeLevel;
   String passwordHash;
@@ -17,6 +23,11 @@ class Teacher {
   int deleted;
   String? createdAt;
   String? updatedAt;
+
+  // ✅ NOUVEAU : liste des écoles gérées par l'admin
+  // Format : [{'name': 'ecole1', 'city': 'ville1'}, ...]
+  // Stocké en JSON dans SQLite, en array dans Firestore
+  List<Map<String, String>> managedSchools;
 
   Teacher({
     this.id,
@@ -33,13 +44,45 @@ class Teacher {
     this.gradeLevel,
     required this.passwordHash,
     this.isActive = 1,
-    this.synced = 1, // ✅ OK
+    this.synced = 1,
     this.deleted = 0,
     this.createdAt,
     this.updatedAt,
+    this.managedSchools = const [],
   });
 
-  bool get isAdmin => role == 'admin';
+  bool get isAdmin => role == 'admin' || role == 'super_admin';
+
+  // ── Toutes les écoles que cet admin gère ──────────────────
+  // Inclut toujours l'école principale + les écoles additionnelles
+  List<Map<String, String>> get allManagedSchools {
+    final primary = {
+      'name': schoolName.trim().toLowerCase(),
+      'city': schoolCity.trim().toLowerCase(),
+    };
+    final extras = managedSchools
+        .map(
+          (s) => {
+            'name': (s['name'] ?? '').trim().toLowerCase(),
+            'city': (s['city'] ?? '').trim().toLowerCase(),
+          },
+        )
+        .toList();
+    // Dédupliquer
+    final all = <Map<String, String>>[primary];
+    for (final e in extras) {
+      final already = all.any(
+        (a) => a['name'] == e['name'] && a['city'] == e['city'],
+      );
+      if (!already) all.add(e);
+    }
+    return all;
+  }
+
+  // ── school_keys pour requête Firestore ───────────────────
+  List<String> get managedSchoolKeys {
+    return allManagedSchools.map((s) => '${s['name']}__${s['city']}').toList();
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -61,10 +104,25 @@ class Teacher {
       'deleted': deleted,
       'created_at': createdAt,
       'updated_at': updatedAt,
+      // JSON string dans SQLite
+      'managed_schools': managedSchools.isNotEmpty
+          ? jsonEncode(managedSchools)
+          : null,
     };
   }
 
   factory Teacher.fromMap(Map<String, dynamic> map) {
+    List<Map<String, String>> schools = [];
+    try {
+      final raw = map['managed_schools'];
+      if (raw != null && raw.toString().isNotEmpty) {
+        final decoded = jsonDecode(raw.toString()) as List;
+        schools = decoded
+            .map<Map<String, String>>((e) => Map<String, String>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+
     return Teacher(
       id: map['id'],
       firstName: map['first_name'],
@@ -84,18 +142,24 @@ class Teacher {
       deleted: map['deleted'] ?? 0,
       createdAt: map['created_at'],
       updatedAt: map['updated_at'],
+      managedSchools: schools,
     );
   }
 
-  Teacher copyWith({String? role}) {
+  Teacher copyWith({
+    String? role,
+    List<Map<String, String>>? managedSchools,
+    String? schoolName,
+    String? schoolCity,
+  }) {
     return Teacher(
       id: id,
       firstName: firstName,
       lastName: lastName,
       email: email,
       phoneNumber: phoneNumber,
-      schoolName: schoolName,
-      schoolCity: schoolCity,
+      schoolName: schoolName ?? this.schoolName,
+      schoolCity: schoolCity ?? this.schoolCity,
       schoolRegion: schoolRegion,
       role: role ?? this.role,
       preferredLanguage: preferredLanguage,
@@ -107,6 +171,7 @@ class Teacher {
       deleted: deleted,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      managedSchools: managedSchools ?? this.managedSchools,
     );
   }
 }
